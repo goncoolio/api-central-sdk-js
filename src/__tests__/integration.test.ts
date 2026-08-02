@@ -485,6 +485,10 @@ describe('Integration Tests - Real API', () => {
       console.log('✓ Unpinned comment');
     });
 
+    // Reactions are rate limited per user (one every 200ms), so we track how
+    // many were actually accepted instead of assuming every call lands.
+    let acceptedReactions = 0;
+
     it('should send a reaction', async () => {
       const result = await sdk.live.sendReaction(testStreamId, {
         userId: testUser2Id,
@@ -492,14 +496,27 @@ describe('Integration Tests - Real API', () => {
       });
 
       expect(result.accepted).toBe(true);
+      acceptedReactions++;
       console.log('✓ Sent reaction');
     });
 
     it('should send multiple reactions', async () => {
-      // Send additional reactions for stats
-      await sdk.live.sendReaction(testStreamId, { userId: testUserId, emoji: '🔥' });
-      await sdk.live.sendReaction(testStreamId, { userId: testUser2Id, emoji: '👏' });
+      // Different user: not affected by the previous user's rate limit
+      const first = await sdk.live.sendReaction(testStreamId, {
+        userId: testUserId,
+        emoji: '🔥',
+      });
+      if (first.accepted) acceptedReactions++;
 
+      // Same user as the first reaction: wait out the 200ms window
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const second = await sdk.live.sendReaction(testStreamId, {
+        userId: testUser2Id,
+        emoji: '👏',
+      });
+      if (second.accepted) acceptedReactions++;
+
+      expect(acceptedReactions).toBe(3);
       console.log('✓ Sent multiple reactions');
     });
 
@@ -507,7 +524,7 @@ describe('Integration Tests - Real API', () => {
       const result = await sdk.live.getStats(testStreamId);
 
       expect(result).toBeDefined();
-      expect(result.totalReactions).toBeGreaterThanOrEqual(3);
+      expect(result.totalReactions).toBeGreaterThanOrEqual(acceptedReactions);
       console.log('✓ Got stream stats, reactions:', result.totalReactions);
     });
 
