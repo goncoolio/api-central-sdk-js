@@ -1,19 +1,14 @@
 import type { HttpClient } from '../utils/http-client';
 import type {
   CallResponse,
+  CallHistoryResponse,
   InitiateCallRequest,
-  CallType,
-  CallStatus,
   CallParticipantInfo,
-  PaginatedResponse,
   PaginationQuery,
   IceServersResponse,
   SdpRequest,
   IceCandidateRequest,
 } from '../types';
-
-// Alias for consistency
-type CallParticipant = CallParticipantInfo;
 
 // =============================================================================
 // Calls Module (Audio/Video)
@@ -116,8 +111,8 @@ export class CallsModule {
   async addParticipant(
     callId: string,
     request: { userId: string }
-  ): Promise<CallParticipant> {
-    return this.client.post<CallParticipant>(`/calls/${callId}/participants`, request);
+  ): Promise<CallParticipantInfo> {
+    return this.client.post<CallParticipantInfo>(`/calls/${callId}/participants`, request);
   }
 
   /**
@@ -137,13 +132,17 @@ export class CallsModule {
   /**
    * Get call participants
    *
+   * The API has no dedicated participants endpoint: the list is read from
+   * the call itself.
+   *
    * @example
    * ```ts
    * const participants = await sdk.calls.getParticipants('call-uuid');
    * ```
    */
-  async getParticipants(callId: string): Promise<CallParticipant[]> {
-    return this.client.get<CallParticipant[]>(`/calls/${callId}/participants`);
+  async getParticipants(callId: string): Promise<CallParticipantInfo[]> {
+    const call = await this.get(callId);
+    return call.participants ?? [];
   }
 
   // ---------------------------------------------------------------------------
@@ -216,69 +215,21 @@ export class CallsModule {
   // ---------------------------------------------------------------------------
 
   /**
-   * List call history
+   * List the call history of the authenticated user
+   *
+   * The user is taken from the token, so this requires a user token.
+   * The API only supports pagination here — there is no server-side
+   * filtering by user, call type or status.
    *
    * @example
    * ```ts
-   * // All calls
-   * const { data } = await sdk.calls.listHistory({ page: 1 });
-   *
-   * // Filter by user
-   * const userCalls = await sdk.calls.listHistory({
-   *   userId: 'user-uuid',
-   *   page: 1
-   * });
-   *
-   * // Filter by status
-   * const missedCalls = await sdk.calls.listHistory({
-   *   status: 'failed',
-   *   page: 1
-   * });
+   * const { calls, total, hasMore } = await sdk.calls.listHistory({ page: 1, limit: 20 });
    * ```
    */
-  async listHistory(
-    options?: PaginationQuery & {
-      userId?: string;
-      callType?: CallType;
-      status?: CallStatus;
-    }
-  ): Promise<PaginatedResponse<CallResponse>> {
-    return this.client.get<PaginatedResponse<CallResponse>>('/calls/history', {
-      params: options,
-    });
-  }
-
-  /**
-   * Get call history for a specific user
-   *
-   * @example
-   * ```ts
-   * const { data } = await sdk.calls.getUserHistory('user-uuid', { page: 1 });
-   * ```
-   */
-  async getUserHistory(
-    userId: string,
-    pagination?: PaginationQuery
-  ): Promise<PaginatedResponse<CallResponse>> {
-    return this.client.get<PaginatedResponse<CallResponse>>(`/calls/users/${userId}/history`, {
+  async listHistory(pagination?: PaginationQuery): Promise<CallHistoryResponse> {
+    return this.client.get<CallHistoryResponse>('/calls/history', {
       params: pagination,
     });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Active Calls
-  // ---------------------------------------------------------------------------
-
-  /**
-   * List active calls
-   *
-   * @example
-   * ```ts
-   * const activeCalls = await sdk.calls.listActive();
-   * ```
-   */
-  async listActive(): Promise<CallResponse[]> {
-    return this.client.get<CallResponse[]>('/calls/active');
   }
 
   // ---------------------------------------------------------------------------
@@ -357,22 +308,4 @@ export class CallsModule {
     return this.client.post<CallResponse>(`/calls/${callId}/leave`, request);
   }
 
-  // ---------------------------------------------------------------------------
-  // Active Calls
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Get active call for a user
-   *
-   * @example
-   * ```ts
-   * const call = await sdk.calls.getActiveForUser('user-uuid');
-   * if (call) {
-   *   console.log('User is in a call:', call.id);
-   * }
-   * ```
-   */
-  async getActiveForUser(userId: string): Promise<CallResponse | null> {
-    return this.client.get<CallResponse | null>(`/calls/users/${userId}/active`);
-  }
 }

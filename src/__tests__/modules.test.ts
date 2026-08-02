@@ -27,24 +27,24 @@ describe('ApiCentral SDK', () => {
 
   describe('Auth Module', () => {
     it('should get application token', async () => {
-      const tokenResponse = {
-        token: 'jwt-token',
-        expiresIn: 3600,
-        tokenType: 'Bearer',
-      };
-      mockResponse(tokenResponse);
+      // The API returns snake_case; the client converts it to camelCase.
+      mockResponse({
+        access_token: 'jwt-token',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      });
 
       const result = await sdk.auth.getToken({
         apiKey: 'api-key',
         apiSecret: 'api-secret',
       });
 
-      expect(result).toEqual(tokenResponse);
+      expect(result.accessToken).toBe('jwt-token');
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/s2s/v1/auth/token',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ apiKey: 'api-key', apiSecret: 'api-secret' }),
+          body: JSON.stringify({ api_key: 'api-key', api_secret: 'api-secret' }),
         })
       );
     });
@@ -67,17 +67,6 @@ describe('ApiCentral SDK', () => {
       );
     });
 
-    it('should verify token', async () => {
-      mockResponse({ valid: true, expiresAt: '2024-12-31T23:59:59Z' });
-
-      const result = await sdk.auth.verifyToken();
-
-      expect(result.valid).toBe(true);
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.example.com/s2s/v1/auth/verify',
-        expect.objectContaining({ method: 'GET' })
-      );
-    });
   });
 
   describe('Users Module', () => {
@@ -313,7 +302,7 @@ describe('ApiCentral SDK', () => {
     it('should send a notification', async () => {
       const notification = {
         id: 'notif-uuid',
-        userId: 'user-uuid',
+        type: 'message',
         title: 'Test',
         body: 'Test notification',
       };
@@ -321,28 +310,95 @@ describe('ApiCentral SDK', () => {
 
       const result = await sdk.notifications.send({
         userId: 'user-uuid',
+        notificationType: 'message',
         title: 'Test',
         body: 'Test notification',
       });
 
       expect(result).toEqual(notification);
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.example.com/s2s/v1/notifications',
+        'https://api.example.com/s2s/v1/notifications/send',
         expect.objectContaining({ method: 'POST' })
       );
     });
 
-    it('should mark notifications as read', async () => {
-      mockResponse({ success: true });
+    it('should send a bulk notification', async () => {
+      mockResponse({ success: true, sent_count: 3 });
 
-      await sdk.notifications.markAsRead({
+      const result = await sdk.notifications.sendBulk({
+        userIds: ['user-1', 'user-2', 'user-3'],
+        notificationType: 'system',
+        title: 'Announcement',
+        body: 'Important system update',
+      });
+
+      expect(result.sentCount).toBe(3);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/notifications/send-bulk',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    it('should send a templated notification', async () => {
+      mockResponse({ id: 'notif-uuid', type: 'message', title: 'Hi', body: 'Hello' });
+
+      await sdk.notifications.sendTemplate({
         userId: 'user-uuid',
-        notificationIds: ['notif-1', 'notif-2'],
+        templateSlug: 'new_message',
+        variables: { sender: 'John' },
       });
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.example.com/s2s/v1/notifications/read',
+        'https://api.example.com/s2s/v1/notifications/send-template',
         expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    it('should list notifications for a user', async () => {
+      mockResponse({ data: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } });
+
+      await sdk.notifications.list('user-uuid', { unreadOnly: true });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/notifications?user_id=user-uuid&unread_only=true',
+        expect.objectContaining({ method: 'GET' })
+      );
+    });
+
+    it('should mark notifications as read', async () => {
+      mockResponse({ success: true, updated_count: 2 });
+
+      const result = await sdk.notifications.markAsRead({
+        notificationIds: ['notif-1', 'notif-2'],
+      });
+
+      expect(result.updatedCount).toBe(2);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/notifications/mark-read',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    it('should mark all notifications as read', async () => {
+      mockResponse({ success: true, updated_count: 7 });
+
+      await sdk.notifications.markAllAsRead('user-uuid');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/notifications/mark-all-read?user_id=user-uuid',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    it('should get the unread count', async () => {
+      mockResponse({ count: 4 });
+
+      const result = await sdk.notifications.getUnreadCount('user-uuid');
+
+      expect(result.count).toBe(4);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/notifications/unread-count?user_id=user-uuid',
+        expect.objectContaining({ method: 'GET' })
       );
     });
   });
@@ -470,12 +526,39 @@ describe('ApiCentral SDK', () => {
     });
 
     it('should get viewer count', async () => {
-      mockResponse({ count: 150, peakCount: 200 });
+      mockResponse({ stream_id: 'stream-uuid', viewer_count: 150, viewers: [] });
 
       const result = await sdk.live.getViewerCount('stream-uuid');
 
-      expect(result.count).toBe(150);
-      expect(result.peakCount).toBe(200);
+      expect(result.viewerCount).toBe(150);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/live/streams/stream-uuid/viewers?limit=1',
+        expect.objectContaining({ method: 'GET' })
+      );
+    });
+
+    it('should join a stream', async () => {
+      mockResponse({ stream_id: 'stream-uuid', viewer_count: 151 });
+
+      const result = await sdk.live.joinStream('stream-uuid', { userId: 'user-uuid' });
+
+      expect(result.viewerCount).toBe(151);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/live/streams/stream-uuid/join',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    it('should get reaction counts', async () => {
+      mockResponse([{ emoji: '❤️', count: 150 }]);
+
+      const result = await sdk.live.getReactionCounts('stream-uuid');
+
+      expect(result[0].emoji).toBe('❤️');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/live/streams/stream-uuid/reactions',
+        expect.objectContaining({ method: 'GET' })
+      );
     });
   });
 
@@ -523,19 +606,21 @@ describe('ApiCentral SDK', () => {
     });
 
     it('should get call history', async () => {
-      const response = {
-        data: [{ id: 'call-1' }, { id: 'call-2' }],
-        page: 1,
-        limit: 20,
+      mockResponse({
+        calls: [{ call: { id: 'call-1' } }, { call: { id: 'call-2' } }],
         total: 2,
-        totalPages: 1,
-        hasMore: false,
-      };
-      mockResponse(response);
+        has_more: false,
+      });
 
-      const result = await sdk.calls.listHistory({ callType: 'video', page: 1 });
+      const result = await sdk.calls.listHistory({ page: 1, limit: 20 });
 
-      expect(result).toEqual(response);
+      expect(result.calls).toHaveLength(2);
+      expect(result.total).toBe(2);
+      expect(result.hasMore).toBe(false);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/calls/history?page=1&limit=20',
+        expect.objectContaining({ method: 'GET' })
+      );
     });
   });
 
@@ -586,11 +671,15 @@ describe('ApiCentral SDK', () => {
     });
 
     it('should get prekeys count', async () => {
-      mockResponse({ count: 42 });
+      mockResponse({ user_id: 'user-uuid', available_prekeys: 42 });
 
-      const result = await sdk.encryption.getPrekeysCount('user-uuid');
+      const result = await sdk.encryption.getPrekeysCount();
 
-      expect(result.count).toBe(42);
+      expect(result.availablePrekeys).toBe(42);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/encryption/keys/prekeys/count',
+        expect.objectContaining({ method: 'GET' })
+      );
     });
 
     it('should rotate signed prekey', async () => {
@@ -617,13 +706,13 @@ describe('ApiCentral SDK', () => {
         apiSecret: 'test-api-secret',
       });
 
-      mockResponse({ token: 'new-jwt-token', expiresIn: 3600, tokenType: 'Bearer' });
+      mockResponse({ access_token: 'new-jwt-token', expires_in: 3600, token_type: 'Bearer' });
 
       await sdkWithCreds.authenticate();
 
       // Verify token is set by making a subsequent request
-      mockResponse({ valid: true });
-      await sdkWithCreds.auth.verifyToken();
+      mockResponse({});
+      await sdkWithCreds.users.list();
 
       const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
       expect(lastCall[1].headers.Authorization).toBe('Bearer new-jwt-token');
@@ -632,16 +721,16 @@ describe('ApiCentral SDK', () => {
     it('should set and clear token manually', async () => {
       sdk.setToken('manual-token');
 
-      mockResponse({ valid: true });
-      await sdk.auth.verifyToken();
+      mockResponse({});
+      await sdk.users.list();
 
       let lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
       expect(lastCall[1].headers.Authorization).toBe('Bearer manual-token');
 
       sdk.clearToken();
 
-      mockResponse({ valid: false });
-      await sdk.auth.verifyToken();
+      mockResponse({});
+      await sdk.users.list();
 
       lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
       expect(lastCall[1].headers.Authorization).toBeUndefined();

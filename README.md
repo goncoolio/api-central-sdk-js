@@ -59,12 +59,9 @@ const { token } = await sdk.auth.getToken({
 });
 
 // Get user token for WebSocket connections
-const { token: userToken, userId } = await sdk.auth.getUserToken({
+const { socketToken, user } = await sdk.auth.getUserToken({
   userId: 'user-uuid'
 });
-
-// Verify token
-const { valid, expiresAt } = await sdk.auth.verifyToken();
 ```
 
 ### Users
@@ -156,37 +153,54 @@ await sdk.messaging.markAsRead('conv-uuid', {
 
 ### Notifications
 
-Push and in-app notifications with templates.
+Push and in-app notifications.
+
+`notificationType`, `title` and `body` are required (1-100, 1-255 and 1-1000
+characters). Any string is accepted as a type, so namespaced values such as
+`'news:meteo'` are valid.
 
 ```typescript
 // Send notification
 const notification = await sdk.notifications.send({
   userId: 'user-uuid',
+  notificationType: 'message',
   title: 'New Message',
   body: 'You have a new message from John',
   data: { conversationId: 'conv-uuid' }
 });
 
 // Bulk send
-const results = await sdk.notifications.sendBulk({
+const { sentCount } = await sdk.notifications.sendBulk({
   userIds: ['user-1', 'user-2', 'user-3'],
+  notificationType: 'system',
   title: 'Announcement',
   body: 'Important system update'
 });
 
-// Mark as read
-await sdk.notifications.markAsRead({
-  userId: 'user-uuid',
-  notificationIds: ['notif-1', 'notif-2']
+// Broadcast to every user of the application
+const { totalUsers } = await sdk.notifications.broadcast({
+  notificationType: 'news:meteo',
+  title: 'Alerte Météo',
+  body: 'Pluies intenses prévues',
+  channels: ['push', 'in_app']
 });
 
-// Templates
-const template = await sdk.notifications.createTemplate({
-  name: 'new_message',
-  title: 'New message from {{sender}}',
-  body: '{{sender}}: {{preview}}'
+// Send from a server-side template
+await sdk.notifications.sendTemplate({
+  userId: 'user-uuid',
+  templateSlug: 'new_message',
+  variables: { sender: 'John', preview: 'Hey there' }
 });
+
+// List, count and mark as read
+const { data } = await sdk.notifications.list('user-uuid', { unreadOnly: true });
+const { count } = await sdk.notifications.getUnreadCount('user-uuid');
+await sdk.notifications.markAsRead({ notificationIds: ['notif-1', 'notif-2'] });
+await sdk.notifications.markAllAsRead('user-uuid');
 ```
+
+> Templates are managed server-side. The SDK can send from an existing
+> template slug but cannot create, update or delete templates.
 
 ### Support
 
@@ -256,8 +270,12 @@ await sdk.live.sendReaction('stream-uuid', {
   emoji: '❤️'
 });
 
+// Join / leave as a viewer
+await sdk.live.joinStream('stream-uuid', { userId: 'user-uuid' });
+await sdk.live.leaveStream('stream-uuid', { userId: 'user-uuid' });
+
 // Get viewer count
-const { count, peakCount } = await sdk.live.getViewerCount('stream-uuid');
+const { viewerCount } = await sdk.live.getViewerCount('stream-uuid');
 
 // Get stats
 const stats = await sdk.live.getStats('stream-uuid');
@@ -287,12 +305,8 @@ await sdk.calls.setMuted('call-uuid', 'user-uuid', { muted: true });
 await sdk.calls.setVideoEnabled('call-uuid', 'user-uuid', { enabled: false });
 await sdk.calls.setScreenSharing('call-uuid', 'user-uuid', { sharing: true });
 
-// Call history
-const { data } = await sdk.calls.listHistory({
-  userId: 'user-uuid',
-  callType: 'video',
-  page: 1
-});
+// Call history of the authenticated user (pagination only)
+const { calls, total, hasMore } = await sdk.calls.listHistory({ page: 1, limit: 20 });
 ```
 
 ### Encryption
@@ -319,9 +333,9 @@ await sdk.encryption.registerKeys({
 // Get recipient's PreKey bundle for session establishment
 const bundle = await sdk.encryption.getPreKeyBundle('recipient-uuid');
 
-// Check prekey count and replenish
-const { count } = await sdk.encryption.getPrekeysCount('user-uuid');
-if (count < 25) {
+// Check prekey count and replenish (user taken from the token)
+const { availablePrekeys } = await sdk.encryption.getPrekeysCount();
+if (availablePrekeys < 25) {
   await sdk.encryption.uploadPrekeys({
     userId: 'user-uuid',
     prekeys: [/* new prekeys */]
@@ -338,6 +352,33 @@ await sdk.encryption.rotateSignedPrekey({
   }
 });
 ```
+
+### Realtime
+
+WebSocket events for messaging, typing, presence and notifications.
+
+```typescript
+sdk.connectRealtime(socketToken, { wsUrl: 'wss://api.example.com/events' });
+
+const realtime = sdk.realtime!;
+realtime.joinConversation('conv-uuid');
+
+realtime.onMessageNew((msg) => console.log(msg.content));
+realtime.onTypingUpdate(({ conversationId, userIds }) => { /* ... */ });
+realtime.onPresenceUpdate(({ userId, status }) => { /* ... */ });
+
+// Read receipts — switch the delivery indicator from single to double check
+realtime.onMessageRead(({ conversationId, userId, lastReadMessageId, readAt }) => {
+  markDelivered(conversationId, userId, lastReadMessageId);
+});
+
+// Notifications read elsewhere (another device)
+realtime.onNotificationRead(({ notificationIds }) => { /* ... */ });
+realtime.onNotificationAllRead(() => { /* ... */ });
+```
+
+Audio/video call events and live-stream events are handled by the dedicated
+`CallManager` and `StreamManager` helpers rather than by `realtime`.
 
 ## Error Handling
 

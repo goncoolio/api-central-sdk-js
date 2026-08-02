@@ -1,6 +1,7 @@
 import type { HttpClient } from '../utils/http-client';
 import type {
   PreKeyBundle,
+  PreKeyCountResponse,
   RegisterKeysRequest,
   UploadPrekeysRequest,
 } from '../types';
@@ -112,50 +113,21 @@ export class EncryptionModule {
   }
 
   /**
-   * Get the count of remaining one-time prekeys
+   * Get the count of remaining one-time prekeys for the authenticated user
    *
-   * Monitor this and upload more prekeys when running low.
-   * Recommended to replenish when count drops below 25.
+   * The user is taken from the token, so this requires a user token.
+   * Monitor this and upload more prekeys when running low — replenish
+   * when the count drops below 25.
    *
    * @example
    * ```ts
-   * const { count } = await sdk.encryption.getPrekeysCount('user-uuid');
-   * if (count < 25) {
+   * const { availablePrekeys } = await sdk.encryption.getPrekeysCount();
+   * if (availablePrekeys < 25) {
    *   // Generate and upload more prekeys
    * }
    * ```
    */
-  async getPrekeysCount(userId: string): Promise<{ count: number }> {
-    return this.client.get<{ count: number }>(`/encryption/keys/${userId}/prekeys/count`);
-  }
-
-  /**
-   * Check if a user has encryption keys registered
-   *
-   * @example
-   * ```ts
-   * const { hasKeys } = await sdk.encryption.hasKeys('user-uuid');
-   * if (!hasKeys) {
-   *   // Prompt user to set up E2E encryption
-   * }
-   * ```
-   */
-  async hasKeys(userId: string): Promise<{ hasKeys: boolean }> {
-    return this.client.get<{ hasKeys: boolean }>(`/encryption/keys/${userId}/exists`);
-  }
-
-  /**
-   * Delete all encryption keys for a user
-   *
-   * WARNING: This will break all E2E encrypted sessions.
-   * User will need to re-register keys and establish new sessions.
-   *
-   * @example
-   * ```ts
-   * await sdk.encryption.deleteKeys('user-uuid');
-   * ```
-   */
-  async deleteKeys(userId: string): Promise<{ success: boolean }> {
-    return this.client.delete<{ success: boolean }>(`/encryption/keys/${userId}`);
+  async getPrekeysCount(): Promise<PreKeyCountResponse> {
+    return this.client.get<PreKeyCountResponse>('/encryption/keys/prekeys/count');
   }
 }

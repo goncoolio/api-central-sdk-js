@@ -285,31 +285,63 @@ export interface MarkReadRequest {
 // Notification Types
 // -----------------------------------------------------------------------------
 
-export type NotificationType = 'info' | 'success' | 'warning' | 'error' | 'message' | 'system';
+/**
+ * Notification category. The API accepts any string of 1-100 characters,
+ * so namespaced types such as `'news:meteo'` are valid; the listed values
+ * are the common ones and exist only for autocompletion.
+ */
+export type NotificationType =
+  | 'info'
+  | 'success'
+  | 'warning'
+  | 'error'
+  | 'message'
+  | 'system'
+  | (string & {});
+
+/** Delivery channel. `email` is only honoured when the app has SMTP configured. */
+export type NotificationChannel = 'push' | 'in_app' | 'email';
 
 export interface SendNotificationRequest {
   userId: string;
+  /** Required. 1-100 characters. */
+  notificationType: NotificationType;
+  /** Required. 1-255 characters. */
   title: string;
+  /** Required. 1-1000 characters. */
   body: string;
-  notificationType?: NotificationType;
-  channels?: string[];
+  channels?: NotificationChannel[];
   data?: Record<string, unknown>;
 }
 
 export interface SendBulkNotificationRequest {
   userIds: string[];
+  /** Required. 1-100 characters. */
+  notificationType: NotificationType;
+  /** Required. 1-255 characters. */
   title: string;
+  /** Required. 1-1000 characters. */
   body: string;
-  notificationType?: NotificationType;
-  channels?: string[];
+  channels?: NotificationChannel[];
+  data?: Record<string, unknown>;
+}
+
+export interface BroadcastNotificationRequest {
+  /** Required. 1-100 characters. */
+  notificationType: NotificationType;
+  /** Required. 1-255 characters. */
+  title: string;
+  /** Required. 1-1000 characters. */
+  body: string;
+  channels?: NotificationChannel[];
   data?: Record<string, unknown>;
 }
 
 export interface SendTemplatedNotificationRequest {
   userId: string;
+  /** Slug of a template defined server-side. 1-100 characters. */
   templateSlug: string;
-  variables?: Record<string, string>;
-  channels?: string[];
+  variables?: Record<string, unknown>;
   data?: Record<string, unknown>;
 }
 
@@ -317,49 +349,39 @@ export interface MarkNotificationsReadRequest {
   notificationIds: string[];
 }
 
+export interface BulkSendResult {
+  success: boolean;
+  sentCount: number;
+}
+
+export interface BroadcastResult {
+  success: boolean;
+  sentCount: number;
+  totalUsers: number;
+}
+
+export interface MarkReadResult {
+  success: boolean;
+  updatedCount: number;
+}
+
 export interface Notification {
   id: string;
-  userId: string;
+  /**
+   * Notification category.
+   *
+   * The API serializes this field as `type`, not `notificationType`.
+   */
+  type: NotificationType;
   title: string;
   body: string;
-  notificationType: NotificationType;
+  data?: Record<string, unknown>;
   isRead: boolean;
   readAt?: string;
-  data?: Record<string, unknown>;
   createdAt: string;
 }
 
 export interface NotificationResponse extends Notification {}
-
-// Notification Templates
-export interface NotificationTemplate {
-  id: string;
-  applicationId: string;
-  name: string;
-  slug: string;
-  title: string;
-  body: string;
-  defaultChannels?: string[];
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateTemplateRequest {
-  name: string;
-  slug?: string;
-  title: string;
-  body: string;
-  defaultChannels?: string[];
-}
-
-export interface UpdateTemplateRequest {
-  name?: string;
-  title?: string;
-  body?: string;
-  defaultChannels?: string[];
-  isActive?: boolean;
-}
 
 // Alias for compatibility
 export type CreateNotificationRequest = SendNotificationRequest;
@@ -581,6 +603,12 @@ export interface StreamViewersResponse {
   viewers: UserInfo[];
 }
 
+/** Returned when joining or leaving a stream. */
+export interface StreamViewerCount {
+  streamId: string;
+  viewerCount: number;
+}
+
 export interface StreamStats {
   streamId: string;
   viewerCount: number;
@@ -656,8 +684,28 @@ export interface CallResponse {
   createdAt: string;
 }
 
+/**
+ * Compact call representation used by the history endpoint.
+ *
+ * Unlike {@link CallResponse} it carries `initiatorId` instead of a full
+ * `initiator` object, and no participant list.
+ */
+export interface CallInfo {
+  id: string;
+  conversationId?: string;
+  initiatorId: string;
+  callType: CallType;
+  status: CallStatus;
+  participantCount: number;
+  durationSeconds?: number;
+  encryptionEnabled: boolean;
+  startedAt?: string;
+  connectedAt?: string;
+  endedAt?: string;
+}
+
 export interface CallHistoryEntry {
-  call: CallResponse;
+  call: CallInfo;
   otherParticipants: UserInfo[];
   yourStatus: ParticipantCallStatus;
 }

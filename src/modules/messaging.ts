@@ -166,6 +166,20 @@ export class MessagingModule {
     );
   }
 
+  /**
+   * List the participants of a conversation
+   *
+   * @example
+   * ```ts
+   * const participants = await sdk.messaging.listParticipants('conv-uuid');
+   * ```
+   */
+  async listParticipants(conversationId: string): Promise<ConversationParticipant[]> {
+    return this.client.get<ConversationParticipant[]>(
+      `/messaging/conversations/${conversationId}/participants`
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Messages
   // ---------------------------------------------------------------------------

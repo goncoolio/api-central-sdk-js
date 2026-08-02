@@ -47,16 +47,4 @@ export class AuthModule {
   async getUserToken(request: UserTokenRequest): Promise<UserTokenResponse> {
     return this.client.post<UserTokenResponse>('/auth/user-token', request);
   }
-
-  /**
-   * Verify if the current token is valid
-   *
-   * @example
-   * ```ts
-   * const isValid = await sdk.auth.verifyToken();
-   * ```
-   */
-  async verifyToken(): Promise<{ valid: boolean; expiresAt?: string }> {
-    return this.client.get<{ valid: boolean; expiresAt?: string }>('/auth/verify');
-  }
 }

@@ -44,6 +44,14 @@ export interface NotificationEvent {
   createdAt: string;
 }
 
+/** Read receipt broadcast to a conversation room. */
+export interface MessageReadEvent {
+  conversationId: string;
+  userId: string;
+  lastReadMessageId: string;
+  readAt: string;
+}
+
 export class RealtimeModule {
   private ws: WebSocketClient | null = null;
   private config: RealtimeConfig;
@@ -170,6 +178,11 @@ export class RealtimeModule {
     return this.ws?.on('conversation_joined', handler as any) ?? (() => {});
   }
 
+  /** Listen for conversation left confirmation */
+  onConversationLeft(handler: (data: { conversationId: string }) => void): () => void {
+    return this.ws?.on('conversation_left', handler as any) ?? (() => {});
+  }
+
   /** Listen for new messages */
   onMessageNew(handler: (data: MessageEvent) => void): () => void {
     return this.ws?.on('message_new', handler as any) ?? (() => {});
@@ -183,6 +196,16 @@ export class RealtimeModule {
   /** Listen for deleted messages */
   onMessageDeleted(handler: (data: { id: string; conversationId: string }) => void): () => void {
     return this.ws?.on('message_deleted', handler as any) ?? (() => {});
+  }
+
+  /**
+   * Listen for read receipts
+   *
+   * Emitted when a participant marks a conversation as read, so senders can
+   * switch their delivery indicator from single to double check.
+   */
+  onMessageRead(handler: (data: MessageReadEvent) => void): () => void {
+    return this.ws?.on('message_read', handler as any) ?? (() => {});
   }
 
   /** Listen for message reactions */
@@ -213,6 +236,16 @@ export class RealtimeModule {
   /** Listen for new notifications */
   onNotificationNew(handler: (data: NotificationEvent) => void): () => void {
     return this.ws?.on('notification_new', handler as any) ?? (() => {});
+  }
+
+  /** Listen for notifications marked as read on another device */
+  onNotificationRead(handler: (data: { notificationIds: string[] }) => void): () => void {
+    return this.ws?.on('notification_read', handler as any) ?? (() => {});
+  }
+
+  /** Listen for "mark all as read" performed on another device */
+  onNotificationAllRead(handler: () => void): () => void {
+    return this.ws?.on('notification_all_read', handler as any) ?? (() => {});
   }
 
   /** Listen for any event (wildcard) */

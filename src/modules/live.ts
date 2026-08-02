@@ -5,6 +5,9 @@ import type {
   UpdateStreamRequest,
   StreamStatus,
   StreamCommentInfo,
+  StreamViewersResponse,
+  StreamViewerCount,
+  ReactionCount,
   PaginatedResponse,
   PaginationQuery,
   CursorResponse,
@@ -121,18 +124,6 @@ export class LiveModule {
   }
 
   /**
-   * Resume a paused stream
-   *
-   * @example
-   * ```ts
-   * await sdk.live.resumeStream('stream-uuid');
-   * ```
-   */
-  async resumeStream(streamId: string): Promise<StreamResponse> {
-    return this.client.post<StreamResponse>(`/live/streams/${streamId}/resume`);
-  }
-
-  /**
    * End a live stream
    *
    * @example
@@ -145,34 +136,53 @@ export class LiveModule {
     return this.client.post<StreamResponse>(`/live/streams/${streamId}/end`);
   }
 
-  /**
-   * Delete a stream
-   *
-   * @example
-   * ```ts
-   * await sdk.live.deleteStream('stream-uuid');
-   * ```
-   */
-  async deleteStream(streamId: string): Promise<{ success: boolean }> {
-    return this.client.delete<{ success: boolean }>(`/live/streams/${streamId}`);
-  }
-
   // ---------------------------------------------------------------------------
   // Viewers
   // ---------------------------------------------------------------------------
 
   /**
-   * Get current viewer count
+   * Join a stream as a viewer
    *
    * @example
    * ```ts
-   * const { count, peakCount } = await sdk.live.getViewerCount('stream-uuid');
+   * const { viewerCount } = await sdk.live.joinStream('stream-uuid', { userId: 'user-uuid' });
    * ```
    */
-  async getViewerCount(streamId: string): Promise<{ count: number; peakCount: number }> {
-    return this.client.get<{ count: number; peakCount: number }>(
-      `/live/streams/${streamId}/viewers/count`
-    );
+  async joinStream(
+    streamId: string,
+    request: { userId: string }
+  ): Promise<StreamViewerCount> {
+    return this.client.post<StreamViewerCount>(`/live/streams/${streamId}/join`, request);
+  }
+
+  /**
+   * Leave a stream
+   *
+   * @example
+   * ```ts
+   * await sdk.live.leaveStream('stream-uuid', { userId: 'user-uuid' });
+   * ```
+   */
+  async leaveStream(
+    streamId: string,
+    request: { userId: string }
+  ): Promise<StreamViewerCount> {
+    return this.client.post<StreamViewerCount>(`/live/streams/${streamId}/leave`, request);
+  }
+
+  /**
+   * Get the current viewer count
+   *
+   * The API has no count-only endpoint: the count comes with the viewer list.
+   *
+   * @example
+   * ```ts
+   * const { viewerCount } = await sdk.live.getViewerCount('stream-uuid');
+   * ```
+   */
+  async getViewerCount(streamId: string): Promise<{ viewerCount: number }> {
+    const { viewerCount } = await this.getViewers(streamId, { limit: 1 });
+    return { viewerCount };
   }
 
   /**
@@ -187,11 +197,10 @@ export class LiveModule {
   async getViewers(
     streamId: string,
     pagination?: PaginationQuery
-  ): Promise<{ streamId: string; viewerCount: number; viewers: Array<{ id: string; displayName: string }> }> {
-    return this.client.get<{ streamId: string; viewerCount: number; viewers: Array<{ id: string; displayName: string }> }>(
-      `/live/streams/${streamId}/viewers`,
-      { params: pagination }
-    );
+  ): Promise<StreamViewersResponse> {
+    return this.client.get<StreamViewersResponse>(`/live/streams/${streamId}/viewers`, {
+      params: pagination,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -313,13 +322,11 @@ export class LiveModule {
    * @example
    * ```ts
    * const reactions = await sdk.live.getReactionCounts('stream-uuid');
-   * // { '❤️': 150, '🔥': 89, '👏': 45 }
+   * // [{ emoji: '❤️', count: 150 }, { emoji: '🔥', count: 89 }]
    * ```
    */
-  async getReactionCounts(streamId: string): Promise<Record<string, number>> {
-    return this.client.get<Record<string, number>>(
-      `/live/streams/${streamId}/reactions/counts`
-    );
+  async getReactionCounts(streamId: string): Promise<ReactionCount[]> {
+    return this.client.get<ReactionCount[]>(`/live/streams/${streamId}/reactions`);
   }
 
   // ---------------------------------------------------------------------------
