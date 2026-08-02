@@ -412,6 +412,57 @@ import type {
 } from '@api-central/sdk';
 ```
 
+## Testing
+
+```bash
+npm test              # Unit tests (mocked fetch) — no server needed
+npm run test:integration  # Integration tests against a running API
+npm run test:all      # Both
+```
+
+### Integration tests
+
+They run against a real server and create then delete real data (users,
+conversations, messages, notifications, streams, calls). Prerequisites:
+
+1. The Rust API running on `http://localhost:3004`, with Postgres, Redis and
+   RabbitMQ up.
+2. A test application whose key, secret and id match `TEST_CONFIG` at the top
+   of `src/__tests__/integration.test.ts`.
+3. A notification template used by the templated-send test — templates are
+   managed server-side and have no create endpoint, so seed it directly:
+
+```sql
+INSERT INTO notification_templates
+  (application_id, name, slug, title_template, body_template, channels)
+VALUES
+  ('<your-test-application-id>', 'SDK Integration Test', 'sdk_integration_test',
+   'Message de {{sender}}', '{{sender}} : {{preview}}', ARRAY['in_app'])
+ON CONFLICT (application_id, slug) DO NOTHING;
+```
+
+The suite also covers the WebSocket layer: it opens a real connection to
+`ws://localhost:3004/events`, joins a conversation room and asserts that
+`message_read` and `message_new` are delivered.
+
+## Notes on API alignment
+
+A few behaviours are worth knowing, as they are not obvious from the method
+signatures:
+
+- **Response keys are converted to camelCase.** The API speaks snake_case;
+  the HTTP client converts request bodies and query params to snake_case, and
+  responses back to camelCase. `sent_count` reaches your code as `sentCount`.
+- **A notification's category is `type`, not `notificationType`.** The request
+  takes `notificationType`, the response returns `type`.
+- **Notification templates are read-only from the SDK.** You can send from a
+  slug via `sendTemplate`, but creating or editing templates is server-side.
+- **Some endpoints take the user from the token, not from an argument** —
+  `calls.listHistory` and `encryption.getPrekeysCount` both require a user
+  token and ignore any user passed in.
+- **Stream reactions are rate limited** to one per user every 200ms.
+  `sendReaction` returns `{ accepted }`; check it rather than assuming success.
+
 ## License
 
 MIT

@@ -7,16 +7,38 @@
  * Run with: npm run test:integration
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { ApiCentral, ApiCentralError } from '../index';
+import type { MessageReadEvent } from '../modules/realtime';
 
 // Test configuration - Real server credentials
 const TEST_CONFIG = {
   baseUrl: 'http://localhost:3004/s2s/v1',
+  wsUrl: 'ws://localhost:3004/events',
   apiKey: '***CREDENTIAL-RETIRE***',
   apiSecret: '***CREDENTIAL-RETIRE***',
   applicationId: '***IDENTIFIANT-RETIRE***',
 };
+
+/** Reject with a readable message instead of hanging when an event never arrives. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timed out after ${ms}ms waiting for ${label}`)), ms)
+    ),
+  ]);
+}
+
+/** Poll a condition until it holds or the deadline passes. */
+async function waitFor(condition: () => boolean, ms: number): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Condition not met within ${ms}ms`);
+}
 
 describe('Integration Tests - Real API', () => {
   let sdk: ApiCentral;
@@ -273,6 +295,158 @@ describe('Integration Tests - Real API', () => {
       expect(result.success).toBe(true);
       console.log('✓ Marked messages as read');
     });
+
+    it('should list conversation participants', async () => {
+      const result = await sdk.messaging.listParticipants(testConversationId);
+
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBe(2);
+
+      const userIds = result.map((p) => p.userId ?? p.user?.id);
+      expect(userIds).toContain(testUserId);
+      expect(userIds).toContain(testUser2Id);
+      console.log('✓ Listed conversation participants, count:', result.length);
+    });
+  });
+
+  // =========================================================================
+  // NOTIFICATIONS MODULE
+  // =========================================================================
+  describe('Notifications Module', () => {
+    let notificationId: string;
+
+    it('should send a notification', async () => {
+      const result = await sdk.notifications.send({
+        userId: testUserId,
+        notificationType: 'message',
+        title: 'Integration test',
+        body: 'Sent from the SDK integration suite',
+        channels: ['in_app'],
+      });
+
+      expect(result.id).toBeDefined();
+      // The API serializes the category as `type`, not `notificationType`
+      expect(result.type).toBe('message');
+      expect(result.isRead).toBe(false);
+
+      notificationId = result.id;
+      console.log('✓ Sent notification:', notificationId);
+    });
+
+    it('should reject a notification without a type', async () => {
+      try {
+        // @ts-expect-error notificationType is required by the API
+        await sdk.notifications.send({
+          userId: testUserId,
+          title: 'Missing type',
+          body: 'Should be rejected',
+        });
+        expect.fail('Should have thrown a validation error');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiCentralError);
+        expect((error as ApiCentralError).statusCode).toBeGreaterThanOrEqual(400);
+        console.log('✓ Correctly rejected notification without type');
+      }
+    });
+
+    it('should send a bulk notification', async () => {
+      const result = await sdk.notifications.sendBulk({
+        userIds: [testUserId, testUser2Id],
+        notificationType: 'system',
+        title: 'Bulk integration test',
+        body: 'Sent to two users',
+        channels: ['in_app'],
+      });
+
+      expect(result.success).toBe(true);
+      // camelCase conversion of the API's `sent_count`
+      expect(result.sentCount).toBe(2);
+      console.log('✓ Sent bulk notification, count:', result.sentCount);
+    });
+
+    it('should send a templated notification', async () => {
+      const result = await sdk.notifications.sendTemplate({
+        userId: testUserId,
+        templateSlug: 'sdk_integration_test',
+        variables: { sender: 'Alice', preview: 'Hey there' },
+      });
+
+      expect(result.id).toBeDefined();
+      // Template placeholders must have been rendered server-side
+      expect(result.title).toBe('Message de Alice');
+      expect(result.body).toBe('Alice : Hey there');
+      console.log('✓ Sent templated notification:', result.title);
+    });
+
+    it('should return 404 for an unknown template slug', async () => {
+      try {
+        await sdk.notifications.sendTemplate({
+          userId: testUserId,
+          templateSlug: 'does_not_exist_slug',
+        });
+        expect.fail('Should have thrown a 404');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiCentralError);
+        expect((error as ApiCentralError).statusCode).toBe(404);
+        console.log('✓ Correctly returned 404 for unknown template');
+      }
+    });
+
+    it('should list notifications for a user', async () => {
+      const result = await sdk.notifications.list(testUserId, { page: 1, limit: 50 });
+
+      expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.length).toBeGreaterThan(0);
+      console.log('✓ Listed notifications, count:', result.data.length);
+    });
+
+    it('should filter unread notifications', async () => {
+      const result = await sdk.notifications.list(testUserId, { unreadOnly: true });
+
+      expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.every((n) => n.isRead === false)).toBe(true);
+      console.log('✓ Filtered unread notifications, count:', result.data.length);
+    });
+
+    it('should get the unread count', async () => {
+      const result = await sdk.notifications.getUnreadCount(testUserId);
+
+      expect(typeof result.count).toBe('number');
+      expect(result.count).toBeGreaterThan(0);
+      console.log('✓ Unread count:', result.count);
+    });
+
+    it('should mark a notification as read', async () => {
+      const before = await sdk.notifications.getUnreadCount(testUserId);
+
+      const result = await sdk.notifications.markAsRead({
+        notificationIds: [notificationId],
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.updatedCount).toBe(1);
+
+      const after = await sdk.notifications.getUnreadCount(testUserId);
+      expect(after.count).toBe(before.count - 1);
+      console.log('✓ Marked notification as read');
+    });
+
+    it('should mark all notifications as read', async () => {
+      const result = await sdk.notifications.markAllAsRead(testUserId);
+
+      expect(result.success).toBe(true);
+
+      const after = await sdk.notifications.getUnreadCount(testUserId);
+      expect(after.count).toBe(0);
+      console.log('✓ Marked all notifications as read');
+    });
+
+    it('should delete a notification', async () => {
+      const result = await sdk.notifications.delete(notificationId);
+
+      expect(result.success).toBe(true);
+      console.log('✓ Deleted notification');
+    });
   });
 
   // =========================================================================
@@ -456,6 +630,26 @@ describe('Integration Tests - Real API', () => {
       // Note: API returns StreamViewersResponse with viewer_count, not paginated
       expect(result).toBeDefined();
       console.log('✓ Got viewers response');
+    });
+
+    it('should join the stream as a viewer', async () => {
+      const before = await sdk.live.getViewerCount(testStreamId);
+
+      const result = await sdk.live.joinStream(testStreamId, { userId: testUser2Id });
+
+      expect(result.streamId).toBe(testStreamId);
+      expect(result.viewerCount).toBe(before.viewerCount + 1);
+      console.log('✓ Joined stream, viewers:', result.viewerCount);
+    });
+
+    it('should leave the stream', async () => {
+      const before = await sdk.live.getViewerCount(testStreamId);
+
+      const result = await sdk.live.leaveStream(testStreamId, { userId: testUser2Id });
+
+      expect(result.streamId).toBe(testStreamId);
+      expect(result.viewerCount).toBe(before.viewerCount - 1);
+      console.log('✓ Left stream, viewers:', result.viewerCount);
     });
 
     it('should post a comment', async () => {
@@ -699,6 +893,87 @@ describe('Integration Tests - Real API', () => {
       expect(result.status).toBe('ended');
       console.log('✓ Ended video call with screen share');
     });
+  });
+
+  // =========================================================================
+  // REALTIME (WebSocket)
+  // =========================================================================
+  describe('Realtime WebSocket', () => {
+    let wsSdk: ApiCentral;
+
+    beforeAll(async () => {
+      const userTokenResult = await sdk.auth.getUserToken({ userId: testUserId });
+
+      wsSdk = new ApiCentral({
+        baseUrl: TEST_CONFIG.baseUrl,
+        applicationId: TEST_CONFIG.applicationId,
+      });
+      wsSdk.setToken(userTokenResult.socketToken);
+      wsSdk.connectRealtime(userTokenResult.socketToken, { wsUrl: TEST_CONFIG.wsUrl });
+
+      // Wait for the socket to be open before joining any room
+      await waitFor(() => wsSdk.realtime?.connected === true, 5000);
+    }, 30000);
+
+    afterAll(() => {
+      wsSdk?.disconnectRealtime();
+    });
+
+    it('should connect to the WebSocket server', () => {
+      expect(wsSdk.realtime).not.toBeNull();
+      expect(wsSdk.realtime!.connected).toBe(true);
+      console.log('✓ Connected to WebSocket');
+    });
+
+    it('should join a conversation room', async () => {
+      const joined = new Promise<{ conversationId: string; success: boolean }>((resolve) => {
+        wsSdk.realtime!.onConversationJoined((data) => resolve(data));
+      });
+
+      wsSdk.realtime!.joinConversation(testConversationId);
+
+      const event = await withTimeout(joined, 5000, 'conversation_joined');
+      expect(event.conversationId).toBe(testConversationId);
+      expect(event.success).toBe(true);
+      console.log('✓ Joined conversation room over WebSocket');
+    });
+
+    it('should receive a message_read event when a participant marks as read', async () => {
+      const received = new Promise<MessageReadEvent>((resolve) => {
+        wsSdk.realtime!.onMessageRead((data) => resolve(data));
+      });
+
+      // The other participant marks the conversation as read over REST.
+      // The API only broadcasts the receipt when messageId is provided.
+      await sdk.messaging.markAsRead(testConversationId, {
+        userId: testUser2Id,
+        messageId: testMessageId,
+      });
+
+      const event = await withTimeout(received, 8000, 'message_read');
+
+      expect(event.conversationId).toBe(testConversationId);
+      expect(event.userId).toBe(testUser2Id);
+      expect(event.lastReadMessageId).toBe(testMessageId);
+      expect(new Date(event.readAt).toString()).not.toBe('Invalid Date');
+      console.log('✓ Received message_read event, readAt:', event.readAt);
+    }, 20000);
+
+    it('should receive a message_new event when a message is sent', async () => {
+      const received = new Promise<{ content: string }>((resolve) => {
+        wsSdk.realtime!.onMessageNew((data) => resolve(data as { content: string }));
+      });
+
+      await sdk.messaging.sendMessage(testConversationId, {
+        senderId: testUser2Id,
+        content: 'Realtime hello',
+        contentType: 'text',
+      });
+
+      const event = await withTimeout(received, 8000, 'message_new');
+      expect(event.content).toBe('Realtime hello');
+      console.log('✓ Received message_new event');
+    }, 20000);
   });
 
   // =========================================================================
