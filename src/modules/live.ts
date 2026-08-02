@@ -8,9 +8,7 @@ import type {
   StreamViewersResponse,
   StreamViewerCount,
   ReactionCount,
-  PaginatedResponse,
   PaginationQuery,
-  CursorResponse,
   CursorQuery,
 } from '../types';
 
@@ -66,8 +64,10 @@ export class LiveModule {
       status?: StreamStatus;
       hostId?: string;
     }
-  ): Promise<PaginatedResponse<StreamResponse>> {
-    return this.client.get<PaginatedResponse<StreamResponse>>('/live/streams', {
+  ): Promise<StreamResponse[]> {
+    // The API returns a bare array here, not a paginated envelope, unlike the
+    // rest of the SDK's list endpoints.
+    return this.client.get<StreamResponse[]>('/live/streams', {
       params: options,
     });
   }
@@ -235,8 +235,9 @@ export class LiveModule {
   async getComments(
     streamId: string,
     query?: CursorQuery
-  ): Promise<CursorResponse<StreamCommentResponse>> {
-    return this.client.get<CursorResponse<StreamCommentResponse>>(
+  ): Promise<StreamCommentResponse[]> {
+    // Bare array, not a cursor envelope.
+    return this.client.get<StreamCommentResponse[]>(
       `/live/streams/${streamId}/comments`,
       { params: query }
     );
