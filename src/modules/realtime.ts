@@ -52,6 +52,14 @@ export interface MessageReadEvent {
   readAt: string;
 }
 
+/** Delivery receipt broadcast to a conversation room. */
+export interface MessageDeliveredEvent {
+  conversationId: string;
+  userId: string;
+  messageIds: string[];
+  deliveredAt: string;
+}
+
 export class RealtimeModule {
   private ws: WebSocketClient | null = null;
   private config: RealtimeConfig;
@@ -150,6 +158,17 @@ export class RealtimeModule {
     this.ws?.send('typing_stop', { conversationId });
   }
 
+  /**
+   * Acknowledge that these messages reached this client
+   *
+   * Triggers a `message_delivered` broadcast so senders can render the single
+   * check. Call it as soon as a `message_new` is handled — the server cannot
+   * know a client received a message unless it says so.
+   */
+  acknowledgeDelivery(conversationId: string, messageIds: string[]): void {
+    this.ws?.send('message_delivered', { conversationId, messageIds });
+  }
+
   // ---------------------------------------------------------------------------
   // Presence
   // ---------------------------------------------------------------------------
@@ -206,6 +225,16 @@ export class RealtimeModule {
    */
   onMessageRead(handler: (data: MessageReadEvent) => void): () => void {
     return this.ws?.on('message_read', handler as any) ?? (() => {});
+  }
+
+  /**
+   * Listen for delivery receipts
+   *
+   * Emitted once a recipient's client acknowledges the messages. This is the
+   * single check; `onMessageRead` turns it into a double check.
+   */
+  onMessageDelivered(handler: (data: MessageDeliveredEvent) => void): () => void {
+    return this.ws?.on('message_delivered', handler as any) ?? (() => {});
   }
 
   /** Listen for message reactions */

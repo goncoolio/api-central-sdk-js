@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { ApiCentral, ApiCentralError } from '../index';
-import type { MessageReadEvent } from '../modules/realtime';
+import type { MessageDeliveredEvent, MessageReadEvent } from '../modules/realtime';
 
 // Test configuration - Real server credentials
 const TEST_CONFIG = {
@@ -957,6 +957,36 @@ describe('Integration Tests - Real API', () => {
       expect(event.lastReadMessageId).toBe(testMessageId);
       expect(new Date(event.readAt).toString()).not.toBe('Invalid Date');
       console.log('✓ Received message_read event, readAt:', event.readAt);
+    }, 20000);
+
+    it('should receive a message_delivered event after acknowledging', async () => {
+      const received = new Promise<MessageDeliveredEvent>((resolve) => {
+        wsSdk.realtime!.onMessageDelivered((data) => resolve(data));
+      });
+      // A server predating the message_delivered support answers with an error
+      // instead of relaying the receipt. Detect it so the failure is readable.
+      const rejected = new Promise<never>((_, reject) => {
+        wsSdk.realtime!.onError((err) => {
+          const message = String((err as { message?: string }).message ?? '');
+          if (message.includes('message_delivered')) {
+            reject(new Error(`Server does not support message_delivered yet: ${message}`));
+          }
+        });
+      });
+
+      // The server cannot know a client received a message: the client says so.
+      wsSdk.realtime!.acknowledgeDelivery(testConversationId, [testMessageId]);
+
+      const event = await withTimeout(
+        Promise.race([received, rejected]),
+        8000,
+        'message_delivered'
+      );
+
+      expect(event.conversationId).toBe(testConversationId);
+      expect(event.messageIds).toContain(testMessageId);
+      expect(new Date(event.deliveredAt).toString()).not.toBe('Invalid Date');
+      console.log('✓ Received message_delivered event');
     }, 20000);
 
     it('should receive a message_new event when a message is sent', async () => {
