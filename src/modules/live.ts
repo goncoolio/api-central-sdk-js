@@ -124,6 +124,21 @@ export class LiveModule {
   }
 
   /**
+   * Resume a paused stream
+   *
+   * There is no dedicated resume route: the API's start endpoint accepts both
+   * `scheduled` and `paused` streams, so resuming is starting again.
+   *
+   * @example
+   * ```ts
+   * await sdk.live.resumeStream('stream-uuid');
+   * ```
+   */
+  async resumeStream(streamId: string): Promise<StreamResponse> {
+    return this.startStream(streamId);
+  }
+
+  /**
    * End a live stream
    *
    * @example
