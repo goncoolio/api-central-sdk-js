@@ -77,8 +77,9 @@ export class CallsModule {
    * await sdk.calls.decline('call-uuid', { userId: 'user-uuid' });
    * ```
    */
-  async decline(callId: string, request: { userId: string }): Promise<CallResponse> {
-    return this.client.post<CallResponse>(`/calls/${callId}/decline`, request);
+  // The API acknowledges with { success: true }; it does not return the call.
+  async decline(callId: string, request: { userId: string }): Promise<{ success: boolean }> {
+    return this.client.post<{ success: boolean }>(`/calls/${callId}/decline`, request);
   }
 
   /**
@@ -111,8 +112,8 @@ export class CallsModule {
   async addParticipant(
     callId: string,
     request: { userId: string }
-  ): Promise<CallParticipantInfo> {
-    return this.client.post<CallParticipantInfo>(`/calls/${callId}/participants`, request);
+  ): Promise<{ success: boolean }> {
+    return this.client.post<{ success: boolean }>(`/calls/${callId}/participants`, request);
   }
 
   /**
@@ -304,8 +305,9 @@ export class CallsModule {
    * await sdk.calls.leave('call-uuid', { userId: 'user-uuid' });
    * ```
    */
-  async leave(callId: string, request: { userId: string }): Promise<CallResponse> {
-    return this.client.post<CallResponse>(`/calls/${callId}/leave`, request);
+  // The API acknowledges with { success: true }; it does not return the call.
+  async leave(callId: string, request: { userId: string }): Promise<{ success: boolean }> {
+    return this.client.post<{ success: boolean }>(`/calls/${callId}/leave`, request);
   }
 
 }
