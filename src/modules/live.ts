@@ -8,6 +8,7 @@ import type {
   StreamViewersResponse,
   StreamViewerCount,
   StreamStats,
+  StreamReactionResponse,
   ReactionCount,
   PaginationQuery,
   CursorQuery,
@@ -310,23 +311,24 @@ export class LiveModule {
   /**
    * Send a reaction to a stream
    *
+   * Les réactions sont limitées en débit par utilisateur : une réaction
+   * refusée revient avec `accepted: false`, et `retryAfterMs` indique alors
+   * le délai à respecter.
+   *
    * @example
    * ```ts
    * const result = await sdk.live.sendReaction('stream-uuid', {
    *   userId: 'user-uuid',
    *   emoji: '❤️'
    * });
-   * console.log(result.accepted); // true if accepted
+   * if (!result.accepted) console.log(`Réessayer dans ${result.retryAfterMs ?? 200} ms`);
    * ```
    */
   async sendReaction(
     streamId: string,
     request: { userId: string; emoji: string }
-  ): Promise<{ accepted: boolean; message: string }> {
-    return this.client.post<{ accepted: boolean; message: string }>(
-      `/live/streams/${streamId}/reactions`,
-      request
-    );
+  ): Promise<StreamReactionResponse> {
+    return this.client.post<StreamReactionResponse>(`/live/streams/${streamId}/reactions`, request);
   }
 
   /**

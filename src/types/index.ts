@@ -608,6 +608,18 @@ export interface StreamReactionRequest {
   emoji: string;
 }
 
+/**
+ * Réponse de `POST /live/streams/{id}/reactions`. Une réaction refusée par la
+ * limite de débit revient avec `accepted: false`, et `retryAfterMs` quand
+ * l'API indique le délai à respecter.
+ */
+export interface StreamReactionResponse {
+  accepted: boolean;
+  message: string;
+  /** Délai conseillé, en millisecondes, avant une nouvelle réaction. */
+  retryAfterMs?: number;
+}
+
 export interface ReactionCount {
   emoji: string;
   count: number;

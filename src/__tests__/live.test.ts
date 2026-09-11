@@ -38,6 +38,37 @@ describe('LiveModule', () => {
     });
   });
 
+  describe('sendReaction', () => {
+    it('expose retryAfterMs quand la réaction est limitée par le débit', async () => {
+      respondJson(fetchMock, {
+        accepted: false,
+        message: 'Rate limited. Wait 180ms before trying again',
+        retry_after_ms: 180,
+      });
+
+      const result = await sdk.live.sendReaction('stream-1', { userId: 'user-1', emoji: '❤️' });
+
+      expect(result).toEqual({
+        accepted: false,
+        message: 'Rate limited. Wait 180ms before trying again',
+        retryAfterMs: 180,
+      });
+      expect(requestAt(fetchMock, 0)).toMatchObject({
+        url: `${BASE_URL}/live/streams/stream-1/reactions`,
+        method: 'POST',
+        body: { user_id: 'user-1', emoji: '❤️' },
+      });
+    });
+
+    it('renvoie { accepted, message } quand la réaction est acceptée', async () => {
+      respondJson(fetchMock, { accepted: true, message: 'Reaction added' });
+
+      const result = await sdk.live.sendReaction('stream-1', { userId: 'user-1', emoji: '🔥' });
+
+      expect(result).toEqual({ accepted: true, message: 'Reaction added' });
+    });
+  });
+
   describe('getStats', () => {
     it('renvoie StreamStats : réactions par emoji, durée nulle avant le démarrage', async () => {
       respondJson(fetchMock, {

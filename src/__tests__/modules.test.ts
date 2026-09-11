@@ -518,14 +518,15 @@ describe('ApiCentral SDK', () => {
     });
 
     it('should send a reaction', async () => {
-      mockResponse({ success: true });
+      // Réponse réelle de l'API : { accepted, message }
+      mockResponse({ accepted: true, message: 'Reaction added' });
 
       const result = await sdk.live.sendReaction('stream-uuid', {
         userId: 'user-uuid',
         emoji: '❤️',
       });
 
-      expect(result.success).toBe(true);
+      expect(result.accepted).toBe(true);
     });
 
     it('should get viewer count', async () => {

@@ -72,6 +72,18 @@ void live.listStreams({ status: 'live', page: 1, limit: 20 });
 void live.listStreams({ hostId: 'user-uuid' });
 
 // -----------------------------------------------------------------------------
+// Live : POST /live/streams/{id}/reactions renvoie { accepted, message }, et
+// retry_after_ms quand le débit est dépassé (src/api/live.rs, add_reaction)
+// -----------------------------------------------------------------------------
+
+declare const reaction: Resolved<ReturnType<Live['sendReaction']>>;
+expectType<boolean>(reaction.accepted);
+expectType<string>(reaction.message);
+expectType<number | undefined>(reaction.retryAfterMs);
+// @ts-expect-error l'API renvoie { accepted }, pas { success }
+expectType<boolean>(reaction.success);
+
+// -----------------------------------------------------------------------------
 // Temps réel : presence_status transporte { statuses } (src/ws/events.rs)
 // -----------------------------------------------------------------------------
 
