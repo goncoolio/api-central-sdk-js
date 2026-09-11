@@ -1,6 +1,20 @@
 import type { HttpClient } from '../utils/http-client';
 import type { WebSocketClient } from '../utils/ws-client';
 import type { CallType, CallResponse, IceServersResponse } from '../types';
+import { notifyParticipantMedia, toError } from './call-shared';
+import type {
+  CallConnectedEvent,
+  CallEndedEvent,
+  CallErrorEvent,
+  CallManagerState,
+  CallParticipantEvent,
+  IncomingCallEvent,
+  MuteChangedEvent,
+  ParticipantMediaEndpoint,
+  RemoteStreamEvent,
+  ScreenShareChangedEvent,
+  VideoChangedEvent,
+} from './call-shared';
 
 // =============================================================================
 // Call Manager - WebRTC audio/video call orchestration
@@ -31,13 +45,8 @@ export interface StartCallParams {
   encryptionEnabled?: boolean;
 }
 
-export type CallManagerState = 'idle' | 'outgoing' | 'incoming' | 'connecting' | 'connected' | 'ended';
-
-/** Erreur survenue en arrière-plan, hors de toute promesse attendue par l'application. */
-export interface CallErrorEvent {
-  callId: string | null;
-  error: Error;
-}
+// États et charges d'événements partagés avec GroupCallManager.
+export type { CallErrorEvent, CallManagerState } from './call-shared';
 
 interface PeerState {
   pc: RTCPeerConnection;
@@ -45,21 +54,16 @@ interface PeerState {
 }
 
 // Event handler types
-type IncomingCallHandler = (data: { callId: string; callerId: string; callerName?: string; callType: string }) => void;
-type CallConnectedHandler = (data: { callId: string; participantIds: string[] }) => void;
-type CallEndedHandler = (data: { callId: string; reason: string; durationSeconds?: number }) => void;
-type RemoteStreamHandler = (data: { userId: string; stream: MediaStream }) => void;
-type ParticipantHandler = (data: { callId: string; userId: string; userName?: string }) => void;
-type MuteChangedHandler = (data: { callId: string; userId: string; isMuted: boolean }) => void;
-type VideoChangedHandler = (data: { callId: string; userId: string; isVideoEnabled: boolean }) => void;
-type ScreenShareChangedHandler = (data: { callId: string; userId: string; isScreenSharing: boolean }) => void;
+type IncomingCallHandler = (data: IncomingCallEvent) => void;
+type CallConnectedHandler = (data: CallConnectedEvent) => void;
+type CallEndedHandler = (data: CallEndedEvent) => void;
+type RemoteStreamHandler = (data: RemoteStreamEvent) => void;
+type ParticipantHandler = (data: CallParticipantEvent) => void;
+type MuteChangedHandler = (data: MuteChangedEvent) => void;
+type VideoChangedHandler = (data: VideoChangedEvent) => void;
+type ScreenShareChangedHandler = (data: ScreenShareChangedEvent) => void;
 type StateChangedHandler = (state: CallManagerState) => void;
 type CallErrorHandler = (data: CallErrorEvent) => void;
-
-/** Levée quand l'identifiant local manque pour notifier l'API. */
-const MISSING_LOCAL_USER_ID =
-  "Identifiant de l'utilisateur local inconnu : impossible de notifier l'API. " +
-  'Renseignez callManagerConfig.userId, ou connectez le temps réel avec un jeton utilisateur.';
 
 /** Levée quand le temps réel manque : la signalisation WebRTC serait perdue. */
 const MISSING_WEBSOCKET =
@@ -498,26 +502,18 @@ export class CallManager {
     await Promise.all(senders.map((sender) => sender?.replaceTrack(track)));
   }
 
-  /**
-   * Notifie l'API de l'état média du participant local, adressé par son
-   * identifiant réel : l'API attend un UUID dans le chemin.
-   */
+  /** Notifie l'API de l'état média du participant local, adressé par son identifiant réel. */
   private async notifyParticipantState(
-    endpoint: 'mute' | 'video' | 'screen',
+    endpoint: ParticipantMediaEndpoint,
     body: Record<string, boolean>
   ): Promise<void> {
     const callId = this._currentCallId;
     if (!callId) return;
-
-    const userId = this._localUserId;
-    if (!userId) throw new Error(MISSING_LOCAL_USER_ID);
-
-    await this.httpClient.put(`/calls/${callId}/participants/${userId}/${endpoint}`, body);
+    await notifyParticipantMedia(this.httpClient, callId, this._localUserId, endpoint, body);
   }
 
   private emitError(error: unknown): void {
-    const normalized = error instanceof Error ? error : new Error(String(error));
-    this.handlers.onError?.({ callId: this._currentCallId, error: normalized });
+    this.handlers.onError?.({ callId: this._currentCallId, error: toError(error) });
   }
 
   /** Tâche lancée par un événement, que personne n'attend : son échec passe par onError. */
