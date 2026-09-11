@@ -594,11 +594,12 @@ describe('ApiCentral SDK', () => {
     });
 
     it('should set muted status', async () => {
-      mockResponse({ success: true });
+      // Réponse réelle de l'API : { "muted": true }
+      mockResponse({ muted: true });
 
       const result = await sdk.calls.setMuted('call-uuid', 'user-uuid', { muted: true });
 
-      expect(result.success).toBe(true);
+      expect(result.muted).toBe(true);
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/s2s/v1/calls/call-uuid/participants/user-uuid/mute',
         expect.objectContaining({ method: 'PUT' })

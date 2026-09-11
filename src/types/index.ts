@@ -645,6 +645,21 @@ export interface VideoToggleRequest {
   enabled: boolean;
 }
 
+/** Réponse de `PUT /calls/{id}/participants/{userId}/mute`. */
+export interface MuteResponse {
+  muted: boolean;
+}
+
+/** Réponse de `PUT /calls/{id}/participants/{userId}/video` (`video_enabled` côté API). */
+export interface VideoToggleResponse {
+  videoEnabled: boolean;
+}
+
+/** Réponse de `PUT /calls/{id}/participants/{userId}/screen` (`screen_sharing` côté API). */
+export interface ScreenShareResponse {
+  screenSharing: boolean;
+}
+
 /** Type d'une description de session WebRTC (champ `sdp_type` de l'API). */
 export type SdpType = 'offer' | 'answer' | 'pranswer' | 'rollback';
 

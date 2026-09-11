@@ -8,6 +8,9 @@ import type {
   IceServersResponse,
   SdpRequest,
   IceCandidateRequest,
+  MuteResponse,
+  VideoToggleResponse,
+  ScreenShareResponse,
 } from '../types';
 
 // =============================================================================
@@ -166,11 +169,8 @@ export class CallsModule {
     callId: string,
     userId: string,
     request: { muted: boolean }
-  ): Promise<{ success: boolean }> {
-    return this.client.put<{ success: boolean }>(
-      `/calls/${callId}/participants/${userId}/mute`,
-      request
-    );
+  ): Promise<MuteResponse> {
+    return this.client.put<MuteResponse>(`/calls/${callId}/participants/${userId}/mute`, request);
   }
 
   /**
@@ -185,8 +185,8 @@ export class CallsModule {
     callId: string,
     userId: string,
     request: { enabled: boolean }
-  ): Promise<{ success: boolean }> {
-    return this.client.put<{ success: boolean }>(
+  ): Promise<VideoToggleResponse> {
+    return this.client.put<VideoToggleResponse>(
       `/calls/${callId}/participants/${userId}/video`,
       request
     );
@@ -204,8 +204,8 @@ export class CallsModule {
     callId: string,
     userId: string,
     request: { sharing: boolean }
-  ): Promise<{ screenSharing: boolean }> {
-    return this.client.put<{ screenSharing: boolean }>(
+  ): Promise<ScreenShareResponse> {
+    return this.client.put<ScreenShareResponse>(
       `/calls/${callId}/participants/${userId}/screen`,
       request
     );

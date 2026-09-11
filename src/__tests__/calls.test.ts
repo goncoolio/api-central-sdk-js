@@ -46,4 +46,39 @@ describe('CallsModule', () => {
       expect(requestAt(fetchMock, 0).body).toMatchObject({ sdp_type: 'pranswer' });
     });
   });
+
+  describe('bascules média (réponses réelles de l’API)', () => {
+    it('setMuted renvoie { muted }', async () => {
+      respondJson(fetchMock, { muted: true });
+
+      const result = await sdk.calls.setMuted('call-1', 'user-1', { muted: true });
+
+      expect(result).toEqual({ muted: true });
+      expect(requestAt(fetchMock, 0)).toMatchObject({
+        url: `${BASE_URL}/calls/call-1/participants/user-1/mute`,
+        method: 'PUT',
+        body: { muted: true },
+      });
+    });
+
+    it('setVideoEnabled renvoie { videoEnabled } (video_enabled converti)', async () => {
+      respondJson(fetchMock, { video_enabled: false });
+
+      const result = await sdk.calls.setVideoEnabled('call-1', 'user-1', { enabled: false });
+
+      expect(result).toEqual({ videoEnabled: false });
+      expect(requestAt(fetchMock, 0)).toMatchObject({
+        url: `${BASE_URL}/calls/call-1/participants/user-1/video`,
+        body: { enabled: false },
+      });
+    });
+
+    it('setScreenSharing renvoie { screenSharing }', async () => {
+      respondJson(fetchMock, { screen_sharing: true });
+
+      const result = await sdk.calls.setScreenSharing('call-1', 'user-1', { sharing: true });
+
+      expect(result).toEqual({ screenSharing: true });
+    });
+  });
 });
