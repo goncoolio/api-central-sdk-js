@@ -536,6 +536,17 @@ export interface TicketReplyResponse {
 
 export type StreamStatus = 'scheduled' | 'live' | 'paused' | 'ended' | 'archived';
 
+/**
+ * Filtres de `GET /live/streams`. L'API ne lit que `status` (`live` par
+ * défaut) et la pagination : il n'existe pas de filtre par hôte.
+ */
+export interface ListStreamsQuery {
+  status?: StreamStatus;
+  page?: number;
+  /** 20 par défaut, 100 au plus. */
+  limit?: number;
+}
+
 export interface CreateStreamRequest {
   hostId: string;
   title: string;

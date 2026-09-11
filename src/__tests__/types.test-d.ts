@@ -54,3 +54,13 @@ expectType<ReactionCount[]>(stats.reactionsByEmoji);
 expectType<number | null>(stats.durationSeconds);
 // @ts-expect-error l'API ne calcule ni vues totales ni temps de visionnage
 expectType<number>(stats.totalViews);
+
+// -----------------------------------------------------------------------------
+// Live : GET /live/streams ne lit que status (StreamStatusQuery) et la
+// pagination (src/api/live.rs)
+// -----------------------------------------------------------------------------
+
+declare const live: Live;
+void live.listStreams({ status: 'live', page: 1, limit: 20 });
+// @ts-expect-error l'API ignore hostId : ce filtre n'existe pas
+void live.listStreams({ hostId: 'user-uuid' });

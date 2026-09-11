@@ -3,7 +3,7 @@ import type {
   LiveStreamResponse,
   CreateStreamRequest,
   UpdateStreamRequest,
-  StreamStatus,
+  ListStreamsQuery,
   StreamCommentInfo,
   StreamViewersResponse,
   StreamViewerCount,
@@ -48,28 +48,24 @@ export class LiveModule {
   /**
    * List live streams
    *
+   * L'API filtre par `status` (`live` par défaut) et pagine ; elle ne propose
+   * pas de filtre par hôte.
+   *
    * @example
    * ```ts
-   * // List all active streams
-   * const { data } = await sdk.live.listStreams({ status: 'live' });
+   * // Lives en cours
+   * const streams = await sdk.live.listStreams({ status: 'live' });
    *
-   * // List streams by host
-   * const hostStreams = await sdk.live.listStreams({
-   *   hostId: 'user-uuid',
-   *   page: 1
-   * });
+   * // Lives programmés, deuxième page
+   * const scheduled = await sdk.live.listStreams({ status: 'scheduled', page: 2, limit: 20 });
    * ```
    */
-  async listStreams(
-    options?: PaginationQuery & {
-      status?: StreamStatus;
-      hostId?: string;
-    }
-  ): Promise<StreamResponse[]> {
+  async listStreams(options?: ListStreamsQuery): Promise<StreamResponse[]> {
     // The API returns a bare array here, not a paginated envelope, unlike the
-    // rest of the SDK's list endpoints.
+    // rest of the SDK's list endpoints. Seuls les filtres lus par l'API sont
+    // transmis.
     return this.client.get<StreamResponse[]>('/live/streams', {
-      params: options,
+      params: { status: options?.status, page: options?.page, limit: options?.limit },
     });
   }
 

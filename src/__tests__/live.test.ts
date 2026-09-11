@@ -18,6 +18,26 @@ describe('LiveModule', () => {
     vi.unstubAllGlobals();
   });
 
+  describe('listStreams', () => {
+    it('ne transmet que les filtres lus par l’API : status, page et limit', async () => {
+      respondJson(fetchMock, []);
+      // Un appelant JavaScript peut encore passer hostId : il n'est pas envoyé.
+      const legacyOptions: Record<string, unknown> = { status: 'ended', page: 2, limit: 10, hostId: 'user-9' };
+
+      await sdk.live.listStreams(legacyOptions as never);
+
+      expect(requestAt(fetchMock, 0).url).toBe(`${BASE_URL}/live/streams?status=ended&page=2&limit=10`);
+    });
+
+    it('n’envoie aucun paramètre sans option', async () => {
+      respondJson(fetchMock, []);
+
+      await sdk.live.listStreams();
+
+      expect(requestAt(fetchMock, 0).url).toBe(`${BASE_URL}/live/streams`);
+    });
+  });
+
   describe('getStats', () => {
     it('renvoie StreamStats : réactions par emoji, durée nulle avant le démarrage', async () => {
       respondJson(fetchMock, {
