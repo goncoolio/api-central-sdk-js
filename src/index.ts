@@ -380,7 +380,15 @@ export { WebSocketClient } from './utils/ws-client';
 export type { WebSocketClientConfig, ConnectionState, WsEventHandler } from './utils/ws-client';
 
 // Re-export realtime types
-export type { RealtimeConfig, MessageEvent, TypingEvent, PresenceEvent, NotificationEvent } from './modules/realtime';
+export type {
+  RealtimeConfig,
+  MessageEvent,
+  TypingEvent,
+  PresenceEvent,
+  PresenceStatusEvent,
+  PresenceStatusItem,
+  NotificationEvent,
+} from './modules/realtime';
 export type { CallManagerConfig, CallManagerState, StartCallParams } from './modules/call-manager';
 
 // Default export

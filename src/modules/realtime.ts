@@ -60,6 +60,21 @@ export interface MessageDeliveredEvent {
   deliveredAt: string;
 }
 
+/** Statut d'un utilisateur dans l'événement `presence_status`. */
+export interface PresenceStatusItem {
+  userId: string;
+  /** `online` ou `offline` : l'API ne produit pas d'autre statut. */
+  status: string;
+}
+
+/**
+ * Réponse à `subscribePresence` : le statut courant de chaque utilisateur
+ * demandé (événement `presence_status`).
+ */
+export interface PresenceStatusEvent {
+  statuses: PresenceStatusItem[];
+}
+
 export class RealtimeModule {
   private ws: WebSocketClient | null = null;
   private config: RealtimeConfig;
@@ -257,9 +272,20 @@ export class RealtimeModule {
     return this.ws?.on('presence_update', handler as any) ?? (() => {});
   }
 
-  /** Listen for presence status responses */
-  onPresenceStatus(handler: (data: { userId: string; status: string }[]) => void): () => void {
-    return this.ws?.on('presence_status', handler as any) ?? (() => {});
+  /**
+   * Listen for presence status responses
+   *
+   * Répond à `subscribePresence` avec le statut courant de chaque utilisateur
+   * demandé.
+   */
+  onPresenceStatus(handler: (data: PresenceStatusEvent) => void): () => void {
+    return (
+      this.ws?.on('presence_status', (data) => {
+        // Avant son correctif, l'API sérialisait cet événement sans sa liste.
+        const statuses = Array.isArray(data.statuses) ? (data.statuses as PresenceStatusItem[]) : [];
+        handler({ statuses });
+      }) ?? (() => {})
+    );
   }
 
   /** Listen for new notifications */

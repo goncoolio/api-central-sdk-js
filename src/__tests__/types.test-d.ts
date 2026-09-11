@@ -6,7 +6,7 @@
 // qui dérive du contrat casse donc la vérification.
 // =============================================================================
 
-import type { ApiCentral, ReactionCount } from '../index';
+import type { ApiCentral, PresenceStatusItem, ReactionCount, RealtimeModule } from '../index';
 
 type Resolved<T> = T extends Promise<infer R> ? R : never;
 type Calls = ApiCentral['calls'];
@@ -64,3 +64,15 @@ declare const live: Live;
 void live.listStreams({ status: 'live', page: 1, limit: 20 });
 // @ts-expect-error l'API ignore hostId : ce filtre n'existe pas
 void live.listStreams({ hostId: 'user-uuid' });
+
+// -----------------------------------------------------------------------------
+// Temps réel : presence_status transporte { statuses } (src/ws/events.rs)
+// -----------------------------------------------------------------------------
+
+declare const realtime: RealtimeModule;
+realtime.onPresenceStatus((event) => {
+  expectType<PresenceStatusItem[]>(event.statuses);
+  expectType<string>(event.statuses[0]!.userId);
+});
+// @ts-expect-error l'événement est { statuses }, pas un tableau
+realtime.onPresenceStatus((event) => event.map((item) => item.userId));
