@@ -843,6 +843,13 @@ export interface IceServer {
 
 export interface IceServersResponse {
   iceServers: IceServer[];
+  /** Appel pour lequel les identifiants ont été émis. */
+  callId: string;
+  /**
+   * Durée de validité des identifiants TURN, en secondes. Ils sont
+   * temporaires : redemander les serveurs avant leur expiration.
+   */
+  ttl: number;
 }
 
 // -----------------------------------------------------------------------------

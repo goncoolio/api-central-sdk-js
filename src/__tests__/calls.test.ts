@@ -81,4 +81,28 @@ describe('CallsModule', () => {
       expect(result).toEqual({ screenSharing: true });
     });
   });
+
+  describe('serveurs ICE', () => {
+    it('getIceServers expose iceServers, callId et ttl', async () => {
+      respondJson(fetchMock, {
+        ice_servers: [
+          { urls: ['stun:stun.example.com:3478'] },
+          { urls: ['turn:turn.example.com:3478'], username: '1700000000:user-1', credential: 'c2VjcmV0' },
+        ],
+        call_id: 'call-1',
+        ttl: 86400,
+      });
+
+      const result = await sdk.calls.getIceServers('call-1');
+
+      expect(result.callId).toBe('call-1');
+      expect(result.ttl).toBe(86400);
+      expect(result.iceServers[1]).toEqual({
+        urls: ['turn:turn.example.com:3478'],
+        username: '1700000000:user-1',
+        credential: 'c2VjcmV0',
+      });
+      expect(requestAt(fetchMock, 0).url).toBe(`${BASE_URL}/calls/call-1/ice-servers`);
+    });
+  });
 });

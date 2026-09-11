@@ -29,3 +29,11 @@ expectType<boolean>(videoResult.success);
 
 declare const screenResult: Resolved<ReturnType<Calls['setScreenSharing']>>;
 expectType<boolean>(screenResult.screenSharing);
+
+// -----------------------------------------------------------------------------
+// Appels : GET /calls/{id}/ice-servers renvoie { ice_servers, call_id, ttl }
+// -----------------------------------------------------------------------------
+
+declare const iceServers: Resolved<ReturnType<Calls['getIceServers']>>;
+expectType<string>(iceServers.callId);
+expectType<number>(iceServers.ttl);
