@@ -66,6 +66,8 @@ export class CallManager {
   // Current call state
   private _state: CallManagerState = 'idle';
   private _currentCallId: string | null = null;
+  // Appel que l'on vient de quitter : sa fin (call_ended) reste transmise.
+  private _lastCallId: string | null = null;
   private _localUserId: string | null;
   private _localStream: MediaStream | null = null;
   private _screenStream: MediaStream | null = null;
@@ -163,6 +165,10 @@ export class CallManager {
 
   // ---------------------------------------------------------------------------
   // WebSocket Binding
+  //
+  // Seuls les événements de l'appel géré sont traités : ceux d'un autre appel
+  // (reçu pendant qu'on est occupé, ou appel de groupe piloté ailleurs) ne
+  // doivent jamais toucher à l'appel en cours.
   // ---------------------------------------------------------------------------
 
   /** Bind to a WebSocket client for signaling */
@@ -185,31 +191,40 @@ export class CallManager {
       }),
 
       ws.on('call_connected', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.setState('connected');
         this.handlers.onCallConnected?.(data);
       }),
 
       ws.on('call_ended', (data: any) => {
+        // La fin de l'appel que l'on vient de quitter arrive souvent après la
+        // réponse REST de endCall() : elle reste transmise, une fois.
+        const isCurrent = this.isCurrentCall(data.callId);
+        if (!isCurrent && data.callId !== this._lastCallId) return;
         this.handlers.onCallEnded?.(data);
-        this.cleanup();
+        if (isCurrent) this.cleanup();
+        this._lastCallId = null;
       }),
 
       ws.on('call_answered', (data: any) => {
         // Another participant answered - start WebRTC signaling with them
-        if (this._currentCallId === data.callId && data.userId) {
+        if (this.isNegotiating(data.callId) && data.userId && !this.isLocalUser(data.userId)) {
           this.createPeerAndOffer(data.userId);
         }
       }),
 
       ws.on('call_participant_joined', (data: any) => {
+        // Le serveur diffuse aussi notre propre arrivée dans la salle d'appel.
+        if (!this.isCurrentCall(data.callId) || this.isLocalUser(data.userId)) return;
         this.handlers.onParticipantJoined?.(data);
         // Create peer connection for new participant
-        if (this._currentCallId === data.callId && data.userId) {
+        if (this.isNegotiating(data.callId) && data.userId) {
           this.createPeerAndOffer(data.userId);
         }
       }),
 
       ws.on('call_participant_left', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.handlers.onParticipantLeft?.(data);
         this.removePeer(data.userId);
       }),
@@ -220,27 +235,33 @@ export class CallManager {
 
       // WebRTC signaling events
       ws.on('call_offer_received', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.handleRemoteOffer(data.fromUserId, data.sdp);
       }),
 
       ws.on('call_answer_received', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.handleRemoteAnswer(data.fromUserId, data.sdp);
       }),
 
       ws.on('call_ice_candidate_received', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.handleRemoteIceCandidate(data.fromUserId, data.candidate);
       }),
 
       // Media state changes
       ws.on('call_mute_changed', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.handlers.onMuteChanged?.(data);
       }),
 
       ws.on('call_video_changed', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.handlers.onVideoChanged?.(data);
       }),
 
       ws.on('call_screen_share_changed', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.handlers.onScreenShareChanged?.(data);
       }),
     );
@@ -311,30 +332,37 @@ export class CallManager {
     return call;
   }
 
-  /** Decline an incoming call */
+  /**
+   * Decline an incoming call
+   *
+   * Refuser un autre appel que l'appel géré (reçu pendant un appel) ne touche
+   * pas à l'appel en cours.
+   */
   async declineCall(callId?: string): Promise<void> {
     const id = callId ?? this._currentCallId;
     if (!id) return;
 
     await this.httpClient.post(`/calls/${id}/decline`);
-    this.cleanup();
+    this.finishCall(id);
   }
 
   /** End the current call */
   async endCall(): Promise<void> {
-    if (!this._currentCallId) return;
+    const id = this._currentCallId;
+    if (!id) return;
 
-    await this.httpClient.post(`/calls/${this._currentCallId}/end`);
-    this.cleanup();
+    await this.httpClient.post(`/calls/${id}/end`);
+    this.finishCall(id);
   }
 
   /** Leave the current call (call continues for others) */
   async leaveCall(): Promise<void> {
-    if (!this._currentCallId) return;
+    const id = this._currentCallId;
+    if (!id) return;
 
-    this.ws?.send('call_leave', { callId: this._currentCallId });
-    await this.httpClient.post(`/calls/${this._currentCallId}/leave`);
-    this.cleanup();
+    this.ws?.send('call_leave', { callId: id });
+    await this.httpClient.post(`/calls/${id}/leave`);
+    this.finishCall(id);
   }
 
   // ---------------------------------------------------------------------------
@@ -575,6 +603,30 @@ export class CallManager {
   // State & Cleanup
   // ---------------------------------------------------------------------------
 
+  /** L'événement concerne-t-il l'appel géré ? */
+  private isCurrentCall(callId: unknown): boolean {
+    return typeof callId === 'string' && callId === this._currentCallId;
+  }
+
+  /** Appel géré et rejoint : la négociation WebRTC est permise. */
+  private isNegotiating(callId: unknown): boolean {
+    return (
+      this.isCurrentCall(callId) &&
+      (this._state === 'outgoing' || this._state === 'connecting' || this._state === 'connected')
+    );
+  }
+
+  private isLocalUser(userId: unknown): boolean {
+    return this._localUserId !== null && userId === this._localUserId;
+  }
+
+  /** Libère l'appel `callId` s'il est toujours l'appel géré. */
+  private finishCall(callId: string): void {
+    if (this._currentCallId !== callId) return;
+    this.cleanup();
+    this._lastCallId = callId;
+  }
+
   private setState(state: CallManagerState): void {
     if (this._state === state) return;
     this._state = state;
@@ -596,8 +648,9 @@ export class CallManager {
     this._screenStream?.getTracks().forEach((t) => t.stop());
     this._screenStream = null;
 
-    // Leave call room
-    if (this._currentCallId && this.ws) {
+    // Leave call room — sauf pour un appel entrant jamais décroché, dont on
+    // n'a jamais rejoint la salle.
+    if (this._currentCallId && this.ws && this._state !== 'incoming') {
       this.ws.send('call_leave', { callId: this._currentCallId });
     }
 

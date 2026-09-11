@@ -147,6 +147,60 @@ export class FakeMediaStream {
   }
 }
 
+/** Laisse s'exécuter les promesses et callbacks en attente. */
+export function flushAsync(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** RTCPeerConnection simulée : enregistre les connexions créées. */
+export class FakePeerConnection {
+  static instances: FakePeerConnection[] = [];
+
+  connectionState = 'new';
+  closed = false;
+  ontrack: ((event: unknown) => void) | null = null;
+  onicecandidate: ((event: unknown) => void) | null = null;
+  onconnectionstatechange: (() => void) | null = null;
+  readonly tracks: unknown[] = [];
+
+  constructor(readonly configuration?: unknown) {
+    FakePeerConnection.instances.push(this);
+  }
+
+  addTrack(track: unknown): void {
+    this.tracks.push(track);
+  }
+
+  async createOffer(): Promise<{ type: string; sdp: string }> {
+    return { type: 'offer', sdp: 'v=0 offer' };
+  }
+
+  async createAnswer(): Promise<{ type: string; sdp: string }> {
+    return { type: 'answer', sdp: 'v=0 answer' };
+  }
+
+  async setLocalDescription(): Promise<void> {}
+
+  async setRemoteDescription(): Promise<void> {}
+
+  async addIceCandidate(): Promise<void> {}
+
+  getSenders(): unknown[] {
+    return [];
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+}
+
+/** Remplace `RTCPeerConnection` ; renvoie un accès aux connexions créées. */
+export function stubPeerConnection(): () => FakePeerConnection[] {
+  FakePeerConnection.instances = [];
+  vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
+  return () => FakePeerConnection.instances;
+}
+
 /**
  * Installe `navigator.mediaDevices` : `getUserMedia` renvoie `stream`, et
  * `getDisplayMedia` renvoie `displayStream` s'il est fourni.
