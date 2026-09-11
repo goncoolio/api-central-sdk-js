@@ -253,6 +253,8 @@ export class CallsModule {
   /**
    * Send an SDP offer to a participant
    *
+   * L'API exige `sdp_type` : il vaut `'offer'` sauf si `sdpType` est fourni.
+   *
    * @example
    * ```ts
    * await sdk.calls.sendOffer('call-uuid', {
@@ -262,11 +264,16 @@ export class CallsModule {
    * ```
    */
   async sendOffer(callId: string, request: SdpRequest): Promise<{ success: boolean }> {
-    return this.client.post<{ success: boolean }>(`/calls/${callId}/offer`, request);
+    return this.client.post<{ success: boolean }>(`/calls/${callId}/offer`, {
+      ...request,
+      sdpType: request.sdpType ?? 'offer',
+    });
   }
 
   /**
    * Send an SDP answer to a participant
+   *
+   * L'API exige `sdp_type` : il vaut `'answer'` sauf si `sdpType` est fourni.
    *
    * @example
    * ```ts
@@ -277,7 +284,10 @@ export class CallsModule {
    * ```
    */
   async sendAnswer(callId: string, request: SdpRequest): Promise<{ success: boolean }> {
-    return this.client.post<{ success: boolean }>(`/calls/${callId}/answer-sdp`, request);
+    return this.client.post<{ success: boolean }>(`/calls/${callId}/answer-sdp`, {
+      ...request,
+      sdpType: request.sdpType ?? 'answer',
+    });
   }
 
   /**

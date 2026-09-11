@@ -645,9 +645,17 @@ export interface VideoToggleRequest {
   enabled: boolean;
 }
 
+/** Type d'une description de session WebRTC (champ `sdp_type` de l'API). */
+export type SdpType = 'offer' | 'answer' | 'pranswer' | 'rollback';
+
 export interface SdpRequest {
   toUserId: string;
   sdp: string;
+  /**
+   * Type de la description, exigé par l'API. Facultatif ici : `sendOffer`
+   * envoie `'offer'` et `sendAnswer` `'answer'` par défaut.
+   */
+  sdpType?: SdpType;
 }
 
 export interface IceCandidateRequest {
