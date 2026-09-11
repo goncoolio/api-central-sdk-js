@@ -329,6 +329,40 @@ export class CallManager {
   }
 
   /**
+   * Démarre, côté média, un appel sortant déjà créé (POST /calls) : micro et
+   * caméra, serveurs ICE, salle de signalisation. AutoCallManager crée
+   * l'appel avant d'en choisir le mode. Un appel qui ne peut pas démarrer est
+   * terminé côté API, et la promesse rejette.
+   */
+  async startExistingCall(call: CallResponse): Promise<CallResponse> {
+    if (this._state !== 'idle') throw new Error('Already in a call');
+    this.setState('outgoing');
+    this._currentCallId = call.id;
+
+    try {
+      if (!this.ws) throw new Error(MISSING_WEBSOCKET);
+      await this.acquireLocalMedia(true, call.callType === 'video');
+      await this.fetchIceServers(call.id);
+      this.joinCallRoom(call.id);
+      return call;
+    } catch (error) {
+      await this.endAbandonedCall(call.id);
+      this.cleanup();
+      throw error;
+    }
+  }
+
+  /**
+   * Oublie l'appel entrant `callId` sans le refuser : un autre gestionnaire
+   * le prend en charge (appel de groupe décroché par AutoCallManager). Sans
+   * effet sur un autre appel, ni sur un appel déjà décroché.
+   */
+  dismissIncomingCall(callId: string): void {
+    if (this._state !== 'incoming' || this._currentCallId !== callId) return;
+    this.cleanup();
+  }
+
+  /**
    * Answer an incoming call
    *
    * Les serveurs ICE sont récupérés avant de décrocher : si le média ou la
