@@ -70,5 +70,16 @@ describe('ApiCentral — identifiant local transmis au CallManager', () => {
     });
 
     expect(sdk.callManager.localUserId).toBe('user-explicite');
+    expect(sdk.groupCallManager.localUserId).toBe('user-explicite');
+  });
+
+  it('le transmet aussi au GroupCallManager (jeton, puis connectRealtime)', () => {
+    const sdk = new ApiCentral({ baseUrl: BASE_URL, token: USER_TOKEN, wsUrl: 'wss://api.example.com/events' });
+    expect(sdk.groupCallManager.localUserId).toBe('user-42');
+
+    sdk.connectRealtime(OTHER_USER_TOKEN);
+
+    expect(sdk.groupCallManager.localUserId).toBe('user-7');
+    sdk.disconnectRealtime();
   });
 });

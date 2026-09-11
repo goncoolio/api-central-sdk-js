@@ -13,6 +13,7 @@ import { RealtimeModule } from './modules/realtime';
 import type { RealtimeConfig } from './modules/realtime';
 import { CallManager } from './modules/call-manager';
 import type { CallManagerConfig } from './modules/call-manager';
+import { GroupCallManager } from './modules/group-call-manager';
 import { StreamManager } from './modules/stream-manager';
 
 // =============================================================================
@@ -39,7 +40,8 @@ export interface ApiCentralConfig {
   /**
    * Pre-authenticated token (optional, alternative to apiKey/apiSecret)
    *
-   * Un jeton utilisateur renseigne aussi l'identifiant local du CallManager.
+   * Un jeton utilisateur renseigne aussi l'identifiant local des
+   * gestionnaires d'appels.
    */
   token?: string;
 
@@ -61,6 +63,8 @@ export interface ApiCentralConfig {
 
   /**
    * Call manager configuration (media constraints, etc.)
+   *
+   * `userId` vaut aussi pour le GroupCallManager.
    */
   callManagerConfig?: CallManagerConfig;
 }
@@ -122,6 +126,13 @@ export class ApiCentral {
   public callManager: CallManager;
 
   /**
+   * Gestionnaire des appels de groupe via le SFU LiveKit : navigateur
+   * uniquement, livekit-client requis. Lié au temps réel par
+   * `connectRealtime(token)`.
+   */
+  public groupCallManager: GroupCallManager;
+
+  /**
    * Stream manager for live streaming viewer experience
    * Available after calling `connectRealtime(token)`
    */
@@ -179,6 +190,7 @@ export class ApiCentral {
     this.calls = new CallsModule(this.client);
     this.encryption = new EncryptionModule(this.client);
     this.callManager = new CallManager(this.client, config.callManagerConfig);
+    this.groupCallManager = new GroupCallManager(this.client, { userId: config.callManagerConfig?.userId });
     this.streamManager = new StreamManager();
 
     if (config.token) {
@@ -241,8 +253,8 @@ export class ApiCentral {
   /**
    * Set or update the authentication token
    *
-   * Un jeton utilisateur met aussi à jour l'identifiant local du CallManager ;
-   * un jeton d'application le laisse inchangé.
+   * Un jeton utilisateur met aussi à jour l'identifiant local des
+   * gestionnaires d'appels ; un jeton d'application le laisse inchangé.
    *
    * @example
    * ```ts
@@ -268,6 +280,8 @@ export class ApiCentral {
   /**
    * Connect to the real-time server and bind all managers.
    * This enables WebSocket-based messaging, calls, and streaming.
+   *
+   * Exige un WebSocket natif : navigateur, ou Node.js 22 et plus.
    *
    * @param token - User socket token (obtained via `sdk.auth.getUserToken()`)
    * @param options - Optional realtime configuration overrides
@@ -314,10 +328,11 @@ export class ApiCentral {
     this.realtime = realtime;
     this.adoptUserIdFromToken(token);
 
-    // Bind call manager and stream manager to the WebSocket client
+    // Bind call managers and stream manager to the WebSocket client
     const wsClient = realtime.client;
     if (wsClient) {
       this.callManager.bindWebSocket(wsClient);
+      this.groupCallManager.bindWebSocket(wsClient);
       this.streamManager.bindWebSocket(wsClient);
     }
   }
@@ -327,6 +342,7 @@ export class ApiCentral {
    */
   disconnectRealtime(): void {
     this.callManager.destroy();
+    this.groupCallManager.destroy();
     this.streamManager.destroy();
     this.realtime?.disconnect();
     this.realtime = null;
@@ -345,13 +361,14 @@ export class ApiCentral {
   }
 
   /**
-   * Transmet au CallManager l'utilisateur représenté par un jeton
+   * Transmet aux gestionnaires d'appels l'utilisateur représenté par un jeton
    * utilisateur (claim `user_id`) ; sans effet pour un jeton d'application.
    */
   private adoptUserIdFromToken(token: string): void {
     const userId = readUserIdFromToken(token);
     if (userId) {
       this.callManager.setLocalUserId(userId);
+      this.groupCallManager.setLocalUserId(userId);
     }
   }
 }
@@ -375,6 +392,7 @@ export {
   EncryptionModule,
   RealtimeModule,
   CallManager,
+  GroupCallManager,
   StreamManager,
 } from './modules';
 
@@ -393,6 +411,24 @@ export type {
   NotificationEvent,
 } from './modules/realtime';
 export type { CallManagerConfig, CallManagerState, StartCallParams } from './modules/call-manager';
+export type { GroupCallManagerConfig } from './modules/group-call-manager';
+export type {
+  GroupCallRoom,
+  GroupCallRoomEvents,
+  GroupCallRoomFactory,
+  GroupCallRoomParticipant,
+} from './modules/livekit-room';
+export type {
+  CallConnectedEvent,
+  CallEndedEvent,
+  CallErrorEvent,
+  CallParticipantEvent,
+  IncomingCallEvent,
+  MuteChangedEvent,
+  RemoteStreamEvent,
+  ScreenShareChangedEvent,
+  VideoChangedEvent,
+} from './modules/call-shared';
 
 // Default export
 export default ApiCentral;
