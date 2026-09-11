@@ -6,7 +6,13 @@
 // qui dérive du contrat casse donc la vérification.
 // =============================================================================
 
-import type { ApiCentral, PresenceStatusItem, ReactionCount, RealtimeModule } from '../index';
+import type {
+  ApiCentral,
+  PresenceStatus,
+  PresenceStatusItem,
+  ReactionCount,
+  RealtimeModule,
+} from '../index';
 
 type Resolved<T> = T extends Promise<infer R> ? R : never;
 type Calls = ApiCentral['calls'];
@@ -76,3 +82,13 @@ realtime.onPresenceStatus((event) => {
 });
 // @ts-expect-error l'événement est { statuses }, pas un tableau
 realtime.onPresenceStatus((event) => event.map((item) => item.userId));
+
+// -----------------------------------------------------------------------------
+// Présence : l'API documente online, offline et away (UpdatePresenceRequest,
+// src/types/dto.rs) et ne produit que online et offline
+// (src/services/presence.rs)
+// -----------------------------------------------------------------------------
+
+expectType<PresenceStatus>('away');
+// @ts-expect-error 'busy' n'est ni documenté ni produit par l'API
+expectType<PresenceStatus>('busy');

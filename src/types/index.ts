@@ -128,7 +128,12 @@ export interface UserDevice {
   updatedAt: string;
 }
 
-export type PresenceStatus = 'online' | 'away' | 'busy' | 'offline';
+/**
+ * Statut de présence. L'API documente `online`, `offline` et `away` pour
+ * `updatePresence` ; `getPresence` et le temps réel ne produisent que
+ * `online` et `offline`.
+ */
+export type PresenceStatus = 'online' | 'away' | 'offline';
 
 export interface UpdatePresenceRequest {
   status: PresenceStatus;
