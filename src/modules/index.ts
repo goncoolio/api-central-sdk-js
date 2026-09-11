@@ -9,4 +9,5 @@ export { EncryptionModule } from './encryption';
 export { RealtimeModule } from './realtime';
 export { CallManager } from './call-manager';
 export { GroupCallManager } from './group-call-manager';
+export { AutoCallManager } from './auto-call-manager';
 export { StreamManager } from './stream-manager';

@@ -14,6 +14,7 @@ import type { RealtimeConfig } from './modules/realtime';
 import { CallManager } from './modules/call-manager';
 import type { CallManagerConfig } from './modules/call-manager';
 import { GroupCallManager } from './modules/group-call-manager';
+import { AutoCallManager } from './modules/auto-call-manager';
 import { StreamManager } from './modules/stream-manager';
 
 // =============================================================================
@@ -72,6 +73,7 @@ export interface ApiCentralConfig {
 export class ApiCentral {
   private readonly client: HttpClient;
   private config: ApiCentralConfig;
+  private _autoCallManager: AutoCallManager | null = null;
 
   /**
    * Authentication module for obtaining tokens
@@ -196,6 +198,32 @@ export class ApiCentral {
     if (config.token) {
       this.adoptUserIdFromToken(config.token);
     }
+  }
+
+  /**
+   * Point d'entrée unique des appels : choisit, au démarrage de chaque appel,
+   * le P2P (callManager) ou LiveKit dès trois participants
+   * (groupCallManager), et expose le mode retenu. Navigateur uniquement.
+   *
+   * Créé au premier accès : il prend alors les gestionnaires d'événements de
+   * callManager et groupCallManager ; n'en affectez plus directement à ces
+   * deux-là. Les siens survivent aux reconnexions du temps réel.
+   *
+   * @example
+   * ```ts
+   * sdk.connectRealtime(socketToken);
+   * const calls = sdk.autoCallManager;
+   * calls.onIncomingCall = ({ callId }) => calls.answerCall(callId);
+   * calls.onRemoteStream = ({ userId, stream }) => attach(userId, stream);
+   * await calls.startCall({ participantIds: ['user-2', 'user-3'], callType: 'video' });
+   * console.log(calls.mode); // 'group'
+   * ```
+   */
+  get autoCallManager(): AutoCallManager {
+    if (!this._autoCallManager) {
+      this._autoCallManager = new AutoCallManager(this.callManager, this.groupCallManager, this.calls);
+    }
+    return this._autoCallManager;
   }
 
   /**
@@ -335,6 +363,9 @@ export class ApiCentral {
       this.groupCallManager.bindWebSocket(wsClient);
       this.streamManager.bindWebSocket(wsClient);
     }
+
+    // disconnectRealtime a effacé les relais d'AutoCallManager.
+    this._autoCallManager?.attach();
   }
 
   /**
@@ -393,8 +424,13 @@ export {
   RealtimeModule,
   CallManager,
   GroupCallManager,
+  AutoCallManager,
   StreamManager,
 } from './modules';
+
+// Politique de mode des appels (P2P ou LiveKit)
+export { GROUP_CALL_MIN_PARTICIPANTS, chooseCallMode } from './modules/auto-call-manager';
+export type { CallMode } from './modules/auto-call-manager';
 
 // Re-export WebSocket client for advanced usage
 export { WebSocketClient } from './utils/ws-client';
