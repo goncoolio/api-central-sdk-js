@@ -50,6 +50,44 @@ export function allRequests(mock: Mock): RecordedRequest[] {
   return mock.mock.calls.map((_, index) => requestAt(mock, index));
 }
 
+export interface RouteReply {
+  status?: number;
+  body?: unknown;
+}
+
+/**
+ * Répond selon la route « MÉTHODE /chemin » (chemin relatif à `BASE_URL`,
+ * sans la query) ; une route absente répond 404. Remplace les réponses
+ * programmées une à une : l'ordre des requêtes ne compte plus.
+ */
+export function routeFetch(mock: Mock, routes: Record<string, RouteReply>): void {
+  mock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const key = routeKey(url, init?.method);
+    const reply = routes[key] ?? { status: 404, body: { message: `Route non simulée : ${key}`, statusCode: 404 } };
+    const status = reply.status ?? 200;
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      text: () => Promise.resolve(reply.body === undefined ? '' : JSON.stringify(reply.body)),
+    };
+  });
+}
+
+/** Requêtes reçues, dans l'ordre, sous la forme « MÉTHODE /chemin ». */
+export function requestLog(mock: Mock): string[] {
+  return allRequests(mock).map((request) => routeKey(request.url, request.method));
+}
+
+function routeKey(url: string, method = 'GET'): string {
+  const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+  return `${method} ${path.split('?')[0]}`;
+}
+
+/** Réponse d'erreur au format de l'API (`{ message, statusCode }`). */
+export function apiError(status: number, message: string): RouteReply {
+  return { status, body: { message, statusCode: status } };
+}
+
 /** Construit un JWT non signé dont seule la charge utile compte. */
 export function fakeJwt(payload: Record<string, unknown>): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
