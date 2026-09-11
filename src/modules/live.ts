@@ -7,6 +7,7 @@ import type {
   StreamCommentInfo,
   StreamViewersResponse,
   StreamViewerCount,
+  StreamStats,
   ReactionCount,
   PaginationQuery,
   CursorQuery,
@@ -352,21 +353,16 @@ export class LiveModule {
   /**
    * Get stream statistics
    *
+   * `durationSeconds` vaut `null` tant que le live n'a pas démarré.
+   *
    * @example
    * ```ts
    * const stats = await sdk.live.getStats('stream-uuid');
-   * console.log(stats.totalViews, stats.peakViewers, stats.totalReactions);
+   * console.log(stats.viewerCount, stats.peakViewerCount, stats.totalReactions);
+   * for (const { emoji, count } of stats.reactionsByEmoji) console.log(emoji, count);
    * ```
    */
-  async getStats(streamId: string): Promise<{
-    totalViews: number;
-    uniqueViewers: number;
-    peakViewers: number;
-    averageWatchTime: number;
-    totalComments: number;
-    totalReactions: number;
-    duration?: number;
-  }> {
-    return this.client.get(`/live/streams/${streamId}/stats`);
+  async getStats(streamId: string): Promise<StreamStats> {
+    return this.client.get<StreamStats>(`/live/streams/${streamId}/stats`);
   }
 }

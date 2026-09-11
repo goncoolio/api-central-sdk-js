@@ -6,10 +6,11 @@
 // qui dérive du contrat casse donc la vérification.
 // =============================================================================
 
-import type { ApiCentral } from '../index';
+import type { ApiCentral, ReactionCount } from '../index';
 
 type Resolved<T> = T extends Promise<infer R> ? R : never;
 type Calls = ApiCentral['calls'];
+type Live = ApiCentral['live'];
 
 function expectType<T>(_value: T): void {}
 
@@ -37,3 +38,19 @@ expectType<boolean>(screenResult.screenSharing);
 declare const iceServers: Resolved<ReturnType<Calls['getIceServers']>>;
 expectType<string>(iceServers.callId);
 expectType<number>(iceServers.ttl);
+
+// -----------------------------------------------------------------------------
+// Live : GET /live/streams/{id}/stats renvoie StreamStats (src/types/live.rs)
+// -----------------------------------------------------------------------------
+
+declare const stats: Resolved<ReturnType<Live['getStats']>>;
+expectType<string>(stats.streamId);
+expectType<number>(stats.viewerCount);
+expectType<number>(stats.peakViewerCount);
+expectType<number>(stats.totalComments);
+expectType<number>(stats.totalReactions);
+expectType<ReactionCount[]>(stats.reactionsByEmoji);
+// null tant que le live n'a pas démarré : Option<i64> est sérialisé en null
+expectType<number | null>(stats.durationSeconds);
+// @ts-expect-error l'API ne calcule ni vues totales ni temps de visionnage
+expectType<number>(stats.totalViews);

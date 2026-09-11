@@ -609,13 +609,18 @@ export interface StreamViewerCount {
   viewerCount: number;
 }
 
+/** Réponse de `GET /live/streams/{id}/stats` (`StreamStats` côté API). */
 export interface StreamStats {
   streamId: string;
+  /** Spectateurs connectés au moment de la requête. */
   viewerCount: number;
   peakViewerCount: number;
   totalReactions: number;
   totalComments: number;
-  durationSeconds?: number;
+  /** Réactions cumulées, par emoji. */
+  reactionsByEmoji: ReactionCount[];
+  /** Durée du live en secondes ; `null` tant qu'il n'a pas démarré. */
+  durationSeconds: number | null;
 }
 
 // -----------------------------------------------------------------------------
