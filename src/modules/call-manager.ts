@@ -10,6 +10,15 @@ export interface CallManagerConfig {
   /** Default media constraints */
   defaultAudioConstraints?: MediaTrackConstraints | boolean;
   defaultVideoConstraints?: MediaTrackConstraints | boolean;
+  /**
+   * Identifiant (UUID API Central) de l'utilisateur local.
+   *
+   * Sert à notifier l'API des bascules micro, caméra et partage d'écran
+   * (`/calls/{id}/participants/{userId}/...`). Facultatif quand le SDK peut
+   * le déduire : jeton utilisateur passé à `connectRealtime`, ou événement
+   * WebSocket `connected`. S'il est fourni, il prime sur ces valeurs déduites.
+   */
+  userId?: string;
 }
 
 export interface StartCallParams {
@@ -20,6 +29,12 @@ export interface StartCallParams {
 }
 
 export type CallManagerState = 'idle' | 'outgoing' | 'incoming' | 'connecting' | 'connected' | 'ended';
+
+/** Erreur survenue en arrière-plan, hors de toute promesse attendue par l'application. */
+export interface CallErrorEvent {
+  callId: string | null;
+  error: Error;
+}
 
 interface PeerState {
   pc: RTCPeerConnection;
@@ -36,6 +51,12 @@ type MuteChangedHandler = (data: { callId: string; userId: string; isMuted: bool
 type VideoChangedHandler = (data: { callId: string; userId: string; isVideoEnabled: boolean }) => void;
 type ScreenShareChangedHandler = (data: { callId: string; userId: string; isScreenSharing: boolean }) => void;
 type StateChangedHandler = (state: CallManagerState) => void;
+type CallErrorHandler = (data: CallErrorEvent) => void;
+
+/** Levée quand l'identifiant local manque pour notifier l'API. */
+const MISSING_LOCAL_USER_ID =
+  "Identifiant de l'utilisateur local inconnu : impossible de notifier l'API. " +
+  'Renseignez callManagerConfig.userId, ou connectez le temps réel avec un jeton utilisateur.';
 
 export class CallManager {
   private httpClient: HttpClient;
@@ -45,6 +66,7 @@ export class CallManager {
   // Current call state
   private _state: CallManagerState = 'idle';
   private _currentCallId: string | null = null;
+  private _localUserId: string | null;
   private _localStream: MediaStream | null = null;
   private _screenStream: MediaStream | null = null;
   private _isMuted = false;
@@ -70,11 +92,13 @@ export class CallManager {
     onVideoChanged: null as VideoChangedHandler | null,
     onScreenShareChanged: null as ScreenShareChangedHandler | null,
     onStateChanged: null as StateChangedHandler | null,
+    onError: null as CallErrorHandler | null,
   };
 
   constructor(httpClient: HttpClient, config?: CallManagerConfig) {
     this.httpClient = httpClient;
     this.config = config ?? {};
+    this._localUserId = this.config.userId ?? null;
   }
 
   // ---------------------------------------------------------------------------
@@ -87,6 +111,18 @@ export class CallManager {
   get isMuted(): boolean { return this._isMuted; }
   get isVideoEnabled(): boolean { return this._isVideoEnabled; }
   get isScreenSharing(): boolean { return this._isScreenSharing; }
+
+  /** Identifiant de l'utilisateur local, `null` tant qu'il n'est pas connu. */
+  get localUserId(): string | null { return this._localUserId; }
+
+  /**
+   * Renseigne l'identifiant de l'utilisateur local, déduit du contexte
+   * d'authentification. Sans effet si `userId` est fixé dans la configuration.
+   */
+  setLocalUserId(userId: string): void {
+    if (this.config.userId) return;
+    this._localUserId = userId;
+  }
 
   /** Get remote stream for a specific participant */
   getRemoteStream(userId: string): MediaStream | null {
@@ -117,6 +153,14 @@ export class CallManager {
   set onScreenShareChanged(handler: ScreenShareChangedHandler | null) { this.handlers.onScreenShareChanged = handler; }
   set onStateChanged(handler: StateChangedHandler | null) { this.handlers.onStateChanged = handler; }
 
+  /**
+   * Erreurs survenues en arrière-plan, que personne n'attend (par exemple la
+   * notification de l'API quand le partage d'écran est arrêté depuis le
+   * navigateur). Les méthodes attendues (`toggleMute`…) rejettent leur
+   * promesse à la place.
+   */
+  set onError(handler: CallErrorHandler | null) { this.handlers.onError = handler; }
+
   // ---------------------------------------------------------------------------
   // WebSocket Binding
   // ---------------------------------------------------------------------------
@@ -127,6 +171,12 @@ export class CallManager {
     this.ws = ws;
 
     this.wsUnsubs.push(
+      // À la connexion, le serveur annonce l'utilisateur du jeton.
+      ws.on('connected', (data: any) => {
+        const userId = data.user?.id;
+        if (typeof userId === 'string') this.setLocalUserId(userId);
+      }),
+
       ws.on('call_incoming', (data: any) => {
         if (this._state !== 'idle') return;
         this.setState('incoming');
@@ -289,6 +339,10 @@ export class CallManager {
 
   // ---------------------------------------------------------------------------
   // Media Controls
+  //
+  // L'état local (pistes, drapeaux) est appliqué d'abord et n'est jamais
+  // annulé. La promesse rejette si l'API n'a pas pu être notifiée :
+  // identifiant local inconnu ou requête en échec.
   // ---------------------------------------------------------------------------
 
   /** Toggle microphone mute */
@@ -301,11 +355,7 @@ export class CallManager {
       }
     }
 
-    if (this._currentCallId) {
-      await this.httpClient.put(`/calls/${this._currentCallId}/participants/me/mute`, {
-        muted: this._isMuted,
-      }).catch(() => {});
-    }
+    await this.notifyParticipantState('mute', { muted: this._isMuted });
 
     return this._isMuted;
   }
@@ -320,11 +370,7 @@ export class CallManager {
       }
     }
 
-    if (this._currentCallId) {
-      await this.httpClient.put(`/calls/${this._currentCallId}/participants/me/video`, {
-        enabled: this._isVideoEnabled,
-      }).catch(() => {});
-    }
+    await this.notifyParticipantState('video', { enabled: this._isVideoEnabled });
 
     return this._isVideoEnabled;
   }
@@ -363,22 +409,41 @@ export class CallManager {
           sender?.replaceTrack(screenTrack);
         }
 
-        // Auto-stop when user stops sharing from browser UI
+        // Auto-stop when user stops sharing from browser UI. Personne
+        // n'attend cette promesse : son échec passe par onError.
         screenTrack.onended = () => {
-          this.toggleScreenShare();
+          this.toggleScreenShare().catch((error: unknown) => this.emitError(error));
         };
       } catch {
         return false;
       }
     }
 
-    if (this._currentCallId) {
-      await this.httpClient.put(`/calls/${this._currentCallId}/participants/me/screen`, {
-        sharing: this._isScreenSharing,
-      }).catch(() => {});
-    }
+    await this.notifyParticipantState('screen', { sharing: this._isScreenSharing });
 
     return this._isScreenSharing;
+  }
+
+  /**
+   * Notifie l'API de l'état média du participant local, adressé par son
+   * identifiant réel : l'API attend un UUID dans le chemin.
+   */
+  private async notifyParticipantState(
+    endpoint: 'mute' | 'video' | 'screen',
+    body: Record<string, boolean>
+  ): Promise<void> {
+    const callId = this._currentCallId;
+    if (!callId) return;
+
+    const userId = this._localUserId;
+    if (!userId) throw new Error(MISSING_LOCAL_USER_ID);
+
+    await this.httpClient.put(`/calls/${callId}/participants/${userId}/${endpoint}`, body);
+  }
+
+  private emitError(error: unknown): void {
+    const normalized = error instanceof Error ? error : new Error(String(error));
+    this.handlers.onError?.({ callId: this._currentCallId, error: normalized });
   }
 
   // ---------------------------------------------------------------------------
@@ -560,6 +625,7 @@ export class CallManager {
       onVideoChanged: null,
       onScreenShareChanged: null,
       onStateChanged: null,
+      onError: null,
     };
   }
 }

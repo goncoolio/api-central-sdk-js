@@ -147,10 +147,17 @@ export class FakeMediaStream {
   }
 }
 
-/** Installe `navigator.mediaDevices.getUserMedia` renvoyant `stream`. */
-export function stubUserMedia(stream: FakeMediaStream): Mock {
+/**
+ * Installe `navigator.mediaDevices` : `getUserMedia` renvoie `stream`, et
+ * `getDisplayMedia` renvoie `displayStream` s'il est fourni.
+ */
+export function stubUserMedia(
+  stream: FakeMediaStream,
+  displayStream?: FakeMediaStream
+): { getUserMedia: Mock; getDisplayMedia: Mock } {
   const getUserMedia = vi.fn().mockResolvedValue(stream);
-  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia, getDisplayMedia: vi.fn() } });
+  const getDisplayMedia = vi.fn().mockResolvedValue(displayStream);
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia, getDisplayMedia } });
   vi.stubGlobal('MediaStream', FakeMediaStream);
-  return getUserMedia;
+  return { getUserMedia, getDisplayMedia };
 }
