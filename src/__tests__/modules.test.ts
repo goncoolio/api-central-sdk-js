@@ -50,17 +50,20 @@ describe('ApiCentral SDK', () => {
     });
 
     it('should get user token', async () => {
-      const userTokenResponse = {
-        token: 'user-jwt-token',
-        userId: 'user-123',
-        expiresIn: 86400,
-        tokenType: 'Bearer',
-      };
-      mockResponse(userTokenResponse);
+      // Réponse réelle de l'API (UserTokenResponse, src/types/dto.rs)
+      mockResponse({
+        socket_token: 'user-jwt-token',
+        expires_in: 86400,
+        user: { id: 'user-123', external_user_id: 'ext-123', display_name: 'Jane' },
+      });
 
       const result = await sdk.auth.getUserToken({ userId: 'user-123' });
 
-      expect(result).toEqual(userTokenResponse);
+      expect(result).toEqual({
+        socketToken: 'user-jwt-token',
+        expiresIn: 86400,
+        user: { id: 'user-123', externalUserId: 'ext-123', displayName: 'Jane' },
+      });
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/s2s/v1/auth/user-token',
         expect.objectContaining({ method: 'POST' })

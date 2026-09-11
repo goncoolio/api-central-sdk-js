@@ -27,18 +27,20 @@ export class CallsModule {
   /**
    * Initiate a call
    *
+   * Exige un jeton utilisateur : l'initiateur est l'utilisateur du jeton,
+   * ajouté d'office aux participants. `participantIds` liste les appelés.
+   *
    * @example
    * ```ts
    * // 1:1 video call
    * const call = await sdk.calls.initiate({
-   *   initiatorId: 'user-uuid',
    *   participantIds: ['other-user-uuid'],
    *   callType: 'video'
    * });
    *
-   * // Group audio call from conversation
+   * // Group audio call attached to a conversation
    * const groupCall = await sdk.calls.initiate({
-   *   initiatorId: 'user-uuid',
+   *   participantIds: ['user-2-uuid', 'user-3-uuid'],
    *   conversationId: 'conv-uuid',
    *   callType: 'audio'
    * });

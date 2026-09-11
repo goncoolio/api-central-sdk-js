@@ -19,7 +19,7 @@ export class AuthModule {
    *
    * @example
    * ```ts
-   * const { token } = await sdk.auth.getToken({
+   * const { accessToken, expiresIn } = await sdk.auth.getToken({
    *   apiKey: 'your-api-key',
    *   apiSecret: 'your-api-secret'
    * });
@@ -39,9 +39,10 @@ export class AuthModule {
    *
    * @example
    * ```ts
-   * const { token, userId } = await sdk.auth.getUserToken({
+   * const { socketToken, expiresIn, user } = await sdk.auth.getUserToken({
    *   userId: 'user-uuid'
    * });
+   * sdk.connectRealtime(socketToken);
    * ```
    */
   async getUserToken(request: UserTokenRequest): Promise<UserTokenResponse> {
