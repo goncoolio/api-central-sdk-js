@@ -1,5 +1,6 @@
 import { HttpClient } from './utils/http-client';
 import type { HttpClientConfig } from './utils/http-client';
+import { readUserIdFromToken } from './utils/jwt';
 import { AuthModule } from './modules/auth';
 import { UsersModule } from './modules/users';
 import { MessagingModule } from './modules/messaging';
@@ -37,6 +38,8 @@ export interface ApiCentralConfig {
 
   /**
    * Pre-authenticated token (optional, alternative to apiKey/apiSecret)
+   *
+   * Un jeton utilisateur renseigne aussi l'identifiant local du CallManager.
    */
   token?: string;
 
@@ -177,6 +180,10 @@ export class ApiCentral {
     this.encryption = new EncryptionModule(this.client);
     this.callManager = new CallManager(this.client, config.callManagerConfig);
     this.streamManager = new StreamManager();
+
+    if (config.token) {
+      this.adoptUserIdFromToken(config.token);
+    }
   }
 
   /**
@@ -234,6 +241,9 @@ export class ApiCentral {
   /**
    * Set or update the authentication token
    *
+   * Un jeton utilisateur met aussi à jour l'identifiant local du CallManager ;
+   * un jeton d'application le laisse inchangé.
+   *
    * @example
    * ```ts
    * sdk.setToken('new-jwt-token');
@@ -241,6 +251,7 @@ export class ApiCentral {
    */
   setToken(token: string): void {
     this.client.setHeader('Authorization', `Bearer ${token}`);
+    this.adoptUserIdFromToken(token);
   }
 
   /**
@@ -298,6 +309,7 @@ export class ApiCentral {
       heartbeatInterval: options?.heartbeatInterval ?? 30000,
     });
     this.realtime.connect(token);
+    this.adoptUserIdFromToken(token);
 
     // Bind call manager and stream manager to the WebSocket client
     const wsClient = this.realtime.client;
@@ -327,6 +339,17 @@ export class ApiCentral {
    */
   setApplicationId(applicationId: string): void {
     this.client.setHeader('X-Application-Id', applicationId);
+  }
+
+  /**
+   * Transmet au CallManager l'utilisateur représenté par un jeton
+   * utilisateur (claim `user_id`) ; sans effet pour un jeton d'application.
+   */
+  private adoptUserIdFromToken(token: string): void {
+    const userId = readUserIdFromToken(token);
+    if (userId) {
+      this.callManager.setLocalUserId(userId);
+    }
   }
 }
 
