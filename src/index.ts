@@ -302,17 +302,20 @@ export class ApiCentral {
 
     const wsUrl = options?.wsUrl ?? this.config.wsUrl!;
 
-    // Create and connect the realtime module
-    this.realtime = new RealtimeModule({
+    // Create and connect the realtime module. Il n'est exposé qu'une fois
+    // connecté : un échec (WebSocket natif absent) ne laisse pas de module à
+    // moitié créé.
+    const realtime = new RealtimeModule({
       wsUrl,
       autoReconnect: options?.autoReconnect ?? true,
       heartbeatInterval: options?.heartbeatInterval ?? 30000,
     });
-    this.realtime.connect(token);
+    realtime.connect(token);
+    this.realtime = realtime;
     this.adoptUserIdFromToken(token);
 
     // Bind call manager and stream manager to the WebSocket client
-    const wsClient = this.realtime.client;
+    const wsClient = realtime.client;
     if (wsClient) {
       this.callManager.bindWebSocket(wsClient);
       this.streamManager.bindWebSocket(wsClient);

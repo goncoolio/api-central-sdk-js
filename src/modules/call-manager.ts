@@ -4,6 +4,9 @@ import type { CallType, CallResponse, IceServersResponse } from '../types';
 
 // =============================================================================
 // Call Manager - WebRTC audio/video call orchestration
+//
+// Navigateur uniquement : s'appuie sur RTCPeerConnection et
+// navigator.mediaDevices, absents de Node.js.
 // =============================================================================
 
 export interface CallManagerConfig {

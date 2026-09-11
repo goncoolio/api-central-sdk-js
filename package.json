@@ -47,7 +47,7 @@
     "url": "https://github.com/goncoolio/api-central-sdk-js"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

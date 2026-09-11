@@ -60,6 +60,18 @@ export interface WebSocketClientConfig {
 
 export type WsEventHandler = (data: Record<string, unknown>) => void;
 
+/**
+ * Le client s'appuie sur le WebSocket natif : global dans les navigateurs, et
+ * dans Node.js à partir de la version 22.
+ */
+function assertNativeWebSocket(): void {
+  if (typeof globalThis.WebSocket !== 'function') {
+    throw new Error(
+      'WebSocket natif introuvable : le temps réel du SDK exige un navigateur ou Node.js 22 ou plus récent.'
+    );
+  }
+}
+
 // -----------------------------------------------------------------------------
 // WebSocket Client
 // -----------------------------------------------------------------------------
@@ -78,6 +90,7 @@ export class WebSocketClient {
   private intentionalClose = false;
 
   constructor(config: WebSocketClientConfig) {
+    assertNativeWebSocket();
     this.config = {
       autoReconnect: true,
       maxReconnectAttempts: Infinity,
