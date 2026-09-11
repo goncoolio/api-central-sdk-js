@@ -105,4 +105,40 @@ describe('CallsModule', () => {
       expect(requestAt(fetchMock, 0).url).toBe(`${BASE_URL}/calls/call-1/ice-servers`);
     });
   });
+
+  describe('LiveKit (appels de groupe)', () => {
+    it('getLiveKitToken renvoie url, token, room et identity de GET /calls/{id}/token', async () => {
+      respondJson(fetchMock, {
+        url: 'wss://livekit.example.com',
+        token: 'jeton-sfu',
+        room: 'call:call-1',
+        identity: 'user-1',
+      });
+
+      const result = await sdk.calls.getLiveKitToken('call-1');
+
+      expect(result).toEqual({
+        url: 'wss://livekit.example.com',
+        token: 'jeton-sfu',
+        room: 'call:call-1',
+        identity: 'user-1',
+      });
+      expect(requestAt(fetchMock, 0)).toMatchObject({ url: `${BASE_URL}/calls/call-1/token`, method: 'GET' });
+    });
+
+    it('propage le refus (403) d’un utilisateur qui ne participe pas à l’appel', async () => {
+      respondJson(fetchMock, { message: 'Forbidden', statusCode: 403 }, 403);
+
+      await expect(sdk.calls.getLiveKitToken('call-1')).rejects.toMatchObject({ statusCode: 403 });
+    });
+
+    it('propage le 400 d’un serveur sans LiveKit configuré', async () => {
+      respondJson(fetchMock, { message: 'LiveKit is not configured', statusCode: 400 }, 400);
+
+      await expect(sdk.calls.getLiveKitToken('call-1')).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'LiveKit is not configured',
+      });
+    });
+  });
 });

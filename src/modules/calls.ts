@@ -6,6 +6,7 @@ import type {
   CallParticipantInfo,
   PaginationQuery,
   IceServersResponse,
+  LiveKitTokenResponse,
   SdpRequest,
   IceCandidateRequest,
   MuteResponse,
@@ -250,6 +251,24 @@ export class CallsModule {
    */
   async getIceServers(callId: string): Promise<IceServersResponse> {
     return this.client.get<IceServersResponse>(`/calls/${callId}/ice-servers`);
+  }
+
+  /**
+   * Get a LiveKit token to join the call's SFU room (group calls)
+   *
+   * Exige un jeton utilisateur, et que cet utilisateur participe à l'appel :
+   * sinon l'API répond 403. Un appel inconnu donne 404, un serveur sans
+   * LiveKit configuré 400. Se connecter à l'URL renvoyée, jamais à une URL
+   * codée en dur : `GroupCallManager` (navigateur) s'en charge.
+   *
+   * @example
+   * ```ts
+   * const { url, token } = await sdk.calls.getLiveKitToken('call-uuid');
+   * await room.connect(url, token); // Room de livekit-client
+   * ```
+   */
+  async getLiveKitToken(callId: string): Promise<LiveKitTokenResponse> {
+    return this.client.get<LiveKitTokenResponse>(`/calls/${callId}/token`);
   }
 
   /**

@@ -46,6 +46,17 @@ expectType<string>(iceServers.callId);
 expectType<number>(iceServers.ttl);
 
 // -----------------------------------------------------------------------------
+// Appels : GET /calls/{id}/token renvoie { url, token, room, identity }
+// (src/api/calls.rs, get_livekit_token)
+// -----------------------------------------------------------------------------
+
+declare const liveKitToken: Resolved<ReturnType<Calls['getLiveKitToken']>>;
+expectType<string>(liveKitToken.url);
+expectType<string>(liveKitToken.token);
+expectType<string>(liveKitToken.room);
+expectType<string>(liveKitToken.identity);
+
+// -----------------------------------------------------------------------------
 // Live : GET /live/streams/{id}/stats renvoie StreamStats (src/types/live.rs)
 // -----------------------------------------------------------------------------
 

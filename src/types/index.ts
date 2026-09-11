@@ -885,6 +885,21 @@ export interface IceServersResponse {
   ttl: number;
 }
 
+/**
+ * Réponse de `GET /calls/{id}/token` : de quoi rejoindre la salle LiveKit
+ * (SFU) d'un appel de groupe.
+ */
+export interface LiveKitTokenResponse {
+  /** URL du serveur LiveKit, fournie par l'API : ne jamais la coder en dur. */
+  url: string;
+  /** Jeton d'accès LiveKit, à utiliser dans l'heure (validité fixée par l'API). */
+  token: string;
+  /** Salle LiveKit de l'appel : `call:<id>`. */
+  room: string;
+  /** Identité LiveKit du participant : son identifiant utilisateur. */
+  identity: string;
+}
+
 // -----------------------------------------------------------------------------
 // Error Types
 // -----------------------------------------------------------------------------
