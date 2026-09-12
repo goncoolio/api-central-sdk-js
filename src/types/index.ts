@@ -657,6 +657,11 @@ export interface StreamStats {
 
 export type CallType = 'audio' | 'video' | 'screen_share';
 export type CallStatus = 'initiating' | 'ringing' | 'connected' | 'on_hold' | 'ended' | 'failed';
+/**
+ * Statut d'un participant. `on_hold` est la valeur que l'API sérialise depuis
+ * son correctif du 2026-09-11 ; un serveur déployé avant celui-ci envoie
+ * encore `onhold`, que ce type ne couvre pas volontairement.
+ */
 export type ParticipantCallStatus = 'invited' | 'ringing' | 'joined' | 'on_hold' | 'left' | 'declined' | 'missed';
 
 export interface InitiateCallRequest {

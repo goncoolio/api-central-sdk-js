@@ -223,4 +223,18 @@ describe('CallManager — erreurs remontées, jamais avalées', () => {
       expect(manager.isScreenSharing).toBe(false);
     });
   });
+
+  it('refuse de décrocher un autre appel pendant un appel en cours', async () => {
+    routeFetch(fetchMock, {
+      'POST /calls': { body: CALL },
+      'GET /calls/call-1/ice-servers': { body: ICE_SERVERS },
+    });
+    await manager.startCall(START);
+    const journalAvant = requestLog(fetchMock);
+
+    await expect(manager.answerCall('call-2')).rejects.toThrow('Already in a call');
+
+    expect(manager.currentCallId).toBe('call-1');
+    expect(requestLog(fetchMock)).toEqual(journalAvant);
+  });
 });

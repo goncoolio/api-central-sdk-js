@@ -21,11 +21,13 @@ export class FakeGroupCallRoom implements GroupCallRoom {
   constructor(
     /** Événements de la salle, à émettre depuis le test. */
     readonly events: GroupCallRoomEvents,
-    private readonly connectError: Error | null
+    private readonly connectError: Error | null,
+    private readonly connectGate: Promise<void> | null
   ) {}
 
   async connect(url: string, token: string): Promise<void> {
     this.journal.push('connect');
+    if (this.connectGate) await this.connectGate;
     if (this.connectError) throw this.connectError;
     this.url = url;
     this.token = token;
@@ -53,17 +55,24 @@ export interface FakeRooms {
   last(): FakeGroupCallRoom;
   /** La prochaine salle créée échouera à se connecter avec cette erreur. */
   failNextConnect(error: Error): void;
+  /**
+   * Retient la connexion de la prochaine salle : elle n'aboutit qu'à l'appel
+   * du libérateur renvoyé. Sert à tester ce qui arrive pendant la connexion.
+   */
+  holdNextConnect(): () => void;
 }
 
 export function fakeRoomFactory(): FakeRooms {
   const all: FakeGroupCallRoom[] = [];
   let nextConnectError: Error | null = null;
+  let nextConnectGate: Promise<void> | null = null;
 
   return {
     all,
     factory: async (events) => {
-      const room = new FakeGroupCallRoom(events, nextConnectError);
+      const room = new FakeGroupCallRoom(events, nextConnectError, nextConnectGate);
       nextConnectError = null;
+      nextConnectGate = null;
       all.push(room);
       return room;
     },
@@ -74,6 +83,13 @@ export function fakeRoomFactory(): FakeRooms {
     },
     failNextConnect(error) {
       nextConnectError = error;
+    },
+    holdNextConnect() {
+      let liberer: () => void = () => {};
+      nextConnectGate = new Promise<void>((resolve) => {
+        liberer = resolve;
+      });
+      return liberer;
     },
   };
 }

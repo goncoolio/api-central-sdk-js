@@ -371,7 +371,7 @@ export class CallManager {
   async answerCall(callId?: string): Promise<CallResponse> {
     const id = callId ?? this._currentCallId;
     if (!id) throw new Error('No call to answer');
-    if (!this.ws) throw new Error(MISSING_WEBSOCKET);
+    this.assertCanAnswer();
 
     this._currentCallId = id;
     this.setState('connecting');
@@ -709,6 +709,18 @@ export class CallManager {
   }
 
   /** Un appel ne se lance qu'au repos, et avec la signalisation branchée. */
+  /**
+   * Décrocher pendant un appel en cours écraserait l'appel géré et laisserait
+   * son micro et sa caméra ouverts : on refuse avant de toucher à l'état. Un
+   * appel entrant, lui, se décroche depuis l'état `incoming` ou `idle`.
+   */
+  private assertCanAnswer(): void {
+    if (this._state === 'outgoing' || this._state === 'connecting' || this._state === 'connected') {
+      throw new Error('Already in a call');
+    }
+    if (!this.ws) throw new Error(MISSING_WEBSOCKET);
+  }
+
   private assertCanCall(): void {
     if (this._state !== 'idle') throw new Error('Already in a call');
     if (!this.ws) throw new Error(MISSING_WEBSOCKET);

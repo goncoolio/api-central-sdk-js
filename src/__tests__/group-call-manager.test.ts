@@ -10,6 +10,7 @@ import {
   FakeSocket,
   FakeTrack,
   apiError,
+  flushAsync,
   installFetchMock,
   requestAt,
   requestLog,
@@ -62,6 +63,22 @@ describe('GroupCallManager', () => {
     await manager.startExistingCall(groupCall(callType));
     return rooms.last();
   }
+
+  describe('entrelacement', () => {
+    it('leaveCall pendant la connexion déconnecte la salle orpheline', async () => {
+      route({ 'POST /calls/call-1/leave': { body: {} } });
+      const liberer = rooms.holdNextConnect();
+
+      const demarrage = manager.startExistingCall(groupCall('audio'));
+      await flushAsync();
+      const sortie = manager.leaveCall();
+      liberer();
+      await Promise.allSettled([demarrage, sortie]);
+
+      expect(rooms.last().journal).toContain('disconnect');
+      expect(manager.currentCallId).toBeNull();
+    });
+  });
 
   describe('démarrage', () => {
     it('rejoint la salle avec l’URL et le jeton renvoyés par l’API, micro et caméra publiés', async () => {
