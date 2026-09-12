@@ -44,7 +44,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/goncoolio/api-central-sdk-js"
+    "url": "git+https://github.com/goncoolio/api-central-sdk-js.git"
   },
   "engines": {
     "node": ">=22"
@@ -69,5 +69,12 @@
     "typescript": {
       "optional": true
     }
+  },
+  "homepage": "https://github.com/goncoolio/api-central-sdk-js#readme",
+  "bugs": {
+    "url": "https://github.com/goncoolio/api-central-sdk-js/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
