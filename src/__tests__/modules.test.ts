@@ -286,6 +286,33 @@ describe('ApiCentral SDK', () => {
       );
     });
 
+    it('should update a participant notification settings', async () => {
+      const participant = {
+        id: 'participant-uuid',
+        conversationId: 'conv-uuid',
+        userId: 'user-uuid',
+        role: 'member',
+        isMuted: false,
+        notificationPreference: 'none',
+        joinedAt: '2026-09-12T10:00:00Z',
+      };
+      mockResponse(participant);
+
+      const result = await sdk.messaging.updateParticipantSettings('conv-uuid', 'user-uuid', {
+        notificationPreference: 'none',
+      });
+
+      expect(result).toEqual(participant);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/messaging/conversations/conv-uuid/participants/user-uuid/settings',
+        expect.objectContaining({ method: 'PUT' })
+      );
+      // L'API désérialise le corps en snake_case, sans renommage : seul le
+      // champ fourni doit partir, sous la forme attendue.
+      const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string)).toEqual({ notification_preference: 'none' });
+    });
+
     it('should mark messages as read', async () => {
       mockResponse({ success: true });
 

@@ -12,6 +12,7 @@ import type {
   AddReactionRequest,
   TypingRequest,
   MarkReadRequest,
+  UpdateParticipantSettingsRequest,
   PaginatedResponse,
   PaginationQuery,
   CursorResponse,
@@ -355,6 +356,35 @@ export class MessagingModule {
   async markAsRead(conversationId: string, request: MarkReadRequest): Promise<{ success: boolean }> {
     return this.client.post<{ success: boolean }>(
       `/messaging/conversations/${conversationId}/read`,
+      request
+    );
+  }
+
+  /**
+   * Update a participant's notification settings for a conversation.
+   *
+   * Only the fields provided change. With a user token the caller must take
+   * part in the conversation (403 otherwise); an application token may update
+   * any participant of the application's own conversations.
+   *
+   * Setting `notificationPreference` to `'none'` stops the API from pushing new
+   * messages to that participant while offline — useful when the application
+   * already sends its own, formatted notification.
+   *
+   * @example
+   * ```ts
+   * await sdk.messaging.updateParticipantSettings('conv-uuid', 'user-uuid', {
+   *   notificationPreference: 'none'
+   * });
+   * ```
+   */
+  async updateParticipantSettings(
+    conversationId: string,
+    userId: string,
+    request: UpdateParticipantSettingsRequest
+  ): Promise<ConversationParticipant> {
+    return this.client.put<ConversationParticipant>(
+      `/messaging/conversations/${conversationId}/participants/${userId}/settings`,
       request
     );
   }

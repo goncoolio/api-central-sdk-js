@@ -1,5 +1,22 @@
 # Journal des modifications
 
+## 2.1.0
+
+### Nouveautés
+
+- **`messaging.updateParticipantSettings(conversationId, userId, request)`** :
+  `PUT /messaging/conversations/{id}/participants/{userId}/settings`, qui règle
+  `isMuted` et `notificationPreference` d'un participant. Seuls les champs
+  fournis changent. Le SDK Dart l'exposait déjà ; le SDK JS n'avait aucun moyen
+  d'atteindre cette route, son client HTTP étant privé.
+  Avec `notificationPreference: 'none'`, l'API cesse d'envoyer un push à ce
+  participant quand il est hors ligne — utile lorsque l'application envoie déjà
+  sa propre notification, pour éviter qu'il en reçoive deux.
+- Type **`NotificationPreference`** (`'all' | 'mentions' | 'none'`) et
+  **`UpdateParticipantSettingsRequest`**.
+- `ConversationParticipant` gagne `notificationPreference`, optionnel dans le
+  type afin que les objets de test existants continuent de compiler.
+
 ## 2.0.0
 
 Alignement sur l'API Central S2S et sur la pile média déployée en production
