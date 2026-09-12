@@ -11,14 +11,20 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { ApiCentral, ApiCentralError } from '../index';
 import type { MessageDeliveredEvent, MessageReadEvent } from '../modules/realtime';
 
-// Test configuration - Real server credentials
+// Configuration lue dans l'environnement : aucun credential n'est versionné.
+// Sans API_CENTRAL_API_KEY et API_CENTRAL_API_SECRET, la suite est ignorée.
+//
+//   API_CENTRAL_API_KEY=… API_CENTRAL_API_SECRET=… \
+//   API_CENTRAL_APPLICATION_ID=… npm run test:integration
 const TEST_CONFIG = {
-  baseUrl: 'http://localhost:3004/s2s/v1',
-  wsUrl: 'ws://localhost:3004/events',
-  apiKey: '***CREDENTIAL-RETIRE***',
-  apiSecret: '***CREDENTIAL-RETIRE***',
-  applicationId: '***IDENTIFIANT-RETIRE***',
+  baseUrl: process.env.API_CENTRAL_BASE_URL ?? 'http://localhost:3004/s2s/v1',
+  wsUrl: process.env.API_CENTRAL_WS_URL ?? 'ws://localhost:3004/events',
+  apiKey: process.env.API_CENTRAL_API_KEY ?? '',
+  apiSecret: process.env.API_CENTRAL_API_SECRET ?? '',
+  applicationId: process.env.API_CENTRAL_APPLICATION_ID ?? '',
 };
+
+const hasCredentials = Boolean(TEST_CONFIG.apiKey && TEST_CONFIG.apiSecret);
 
 /** Reject with a readable message instead of hanging when an event never arrives. */
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -40,7 +46,7 @@ async function waitFor(condition: () => boolean, ms: number): Promise<void> {
   throw new Error(`Condition not met within ${ms}ms`);
 }
 
-describe('Integration Tests - Real API', () => {
+describe.skipIf(!hasCredentials)('Integration Tests - Real API', () => {
   let sdk: ApiCentral;
   let testUserId: string;
   let testUser2Id: string;
