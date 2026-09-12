@@ -128,7 +128,12 @@ export interface UserDevice {
   updatedAt: string;
 }
 
-export type PresenceStatus = 'online' | 'away' | 'busy' | 'offline';
+/**
+ * Statut de présence. L'API documente `online`, `offline` et `away` pour
+ * `updatePresence` ; `getPresence` et le temps réel ne produisent que
+ * `online` et `offline`.
+ */
+export type PresenceStatus = 'online' | 'away' | 'offline';
 
 export interface UpdatePresenceRequest {
   status: PresenceStatus;
@@ -536,6 +541,17 @@ export interface TicketReplyResponse {
 
 export type StreamStatus = 'scheduled' | 'live' | 'paused' | 'ended' | 'archived';
 
+/**
+ * Filtres de `GET /live/streams`. L'API ne lit que `status` (`live` par
+ * défaut) et la pagination : il n'existe pas de filtre par hôte.
+ */
+export interface ListStreamsQuery {
+  status?: StreamStatus;
+  page?: number;
+  /** 20 par défaut, 100 au plus. */
+  limit?: number;
+}
+
 export interface CreateStreamRequest {
   hostId: string;
   title: string;
@@ -592,6 +608,18 @@ export interface StreamReactionRequest {
   emoji: string;
 }
 
+/**
+ * Réponse de `POST /live/streams/{id}/reactions`. Une réaction refusée par la
+ * limite de débit revient avec `accepted: false`, et `retryAfterMs` quand
+ * l'API indique le délai à respecter.
+ */
+export interface StreamReactionResponse {
+  accepted: boolean;
+  message: string;
+  /** Délai conseillé, en millisecondes, avant une nouvelle réaction. */
+  retryAfterMs?: number;
+}
+
 export interface ReactionCount {
   emoji: string;
   count: number;
@@ -609,13 +637,18 @@ export interface StreamViewerCount {
   viewerCount: number;
 }
 
+/** Réponse de `GET /live/streams/{id}/stats` (`StreamStats` côté API). */
 export interface StreamStats {
   streamId: string;
+  /** Spectateurs connectés au moment de la requête. */
   viewerCount: number;
   peakViewerCount: number;
   totalReactions: number;
   totalComments: number;
-  durationSeconds?: number;
+  /** Réactions cumulées, par emoji. */
+  reactionsByEmoji: ReactionCount[];
+  /** Durée du live en secondes ; `null` tant qu'il n'a pas démarré. */
+  durationSeconds: number | null;
 }
 
 // -----------------------------------------------------------------------------
@@ -624,6 +657,11 @@ export interface StreamStats {
 
 export type CallType = 'audio' | 'video' | 'screen_share';
 export type CallStatus = 'initiating' | 'ringing' | 'connected' | 'on_hold' | 'ended' | 'failed';
+/**
+ * Statut d'un participant. `on_hold` est la valeur que l'API sérialise depuis
+ * son correctif du 2026-09-11 ; un serveur déployé avant celui-ci envoie
+ * encore `onhold`, que ce type ne couvre pas volontairement.
+ */
 export type ParticipantCallStatus = 'invited' | 'ringing' | 'joined' | 'on_hold' | 'left' | 'declined' | 'missed';
 
 export interface InitiateCallRequest {
@@ -645,9 +683,32 @@ export interface VideoToggleRequest {
   enabled: boolean;
 }
 
+/** Réponse de `PUT /calls/{id}/participants/{userId}/mute`. */
+export interface MuteResponse {
+  muted: boolean;
+}
+
+/** Réponse de `PUT /calls/{id}/participants/{userId}/video` (`video_enabled` côté API). */
+export interface VideoToggleResponse {
+  videoEnabled: boolean;
+}
+
+/** Réponse de `PUT /calls/{id}/participants/{userId}/screen` (`screen_sharing` côté API). */
+export interface ScreenShareResponse {
+  screenSharing: boolean;
+}
+
+/** Type d'une description de session WebRTC (champ `sdp_type` de l'API). */
+export type SdpType = 'offer' | 'answer' | 'pranswer' | 'rollback';
+
 export interface SdpRequest {
   toUserId: string;
   sdp: string;
+  /**
+   * Type de la description, exigé par l'API. Facultatif ici : `sendOffer`
+   * envoie `'offer'` et `sendAnswer` `'answer'` par défaut.
+   */
+  sdpType?: SdpType;
 }
 
 export interface IceCandidateRequest {
@@ -820,6 +881,28 @@ export interface IceServer {
 
 export interface IceServersResponse {
   iceServers: IceServer[];
+  /** Appel pour lequel les identifiants ont été émis. */
+  callId: string;
+  /**
+   * Durée de validité des identifiants TURN, en secondes. Ils sont
+   * temporaires : redemander les serveurs avant leur expiration.
+   */
+  ttl: number;
+}
+
+/**
+ * Réponse de `GET /calls/{id}/token` : de quoi rejoindre la salle LiveKit
+ * (SFU) d'un appel de groupe.
+ */
+export interface LiveKitTokenResponse {
+  /** URL du serveur LiveKit, fournie par l'API : ne jamais la coder en dur. */
+  url: string;
+  /** Jeton d'accès LiveKit, à utiliser dans l'heure (validité fixée par l'API). */
+  token: string;
+  /** Salle LiveKit de l'appel : `call:<id>`. */
+  room: string;
+  /** Identité LiveKit du participant : son identifiant utilisateur. */
+  identity: string;
 }
 
 // -----------------------------------------------------------------------------

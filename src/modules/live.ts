@@ -3,10 +3,12 @@ import type {
   LiveStreamResponse,
   CreateStreamRequest,
   UpdateStreamRequest,
-  StreamStatus,
+  ListStreamsQuery,
   StreamCommentInfo,
   StreamViewersResponse,
   StreamViewerCount,
+  StreamStats,
+  StreamReactionResponse,
   ReactionCount,
   PaginationQuery,
   CursorQuery,
@@ -47,28 +49,24 @@ export class LiveModule {
   /**
    * List live streams
    *
+   * L'API filtre par `status` (`live` par défaut) et pagine ; elle ne propose
+   * pas de filtre par hôte.
+   *
    * @example
    * ```ts
-   * // List all active streams
-   * const { data } = await sdk.live.listStreams({ status: 'live' });
+   * // Lives en cours
+   * const streams = await sdk.live.listStreams({ status: 'live' });
    *
-   * // List streams by host
-   * const hostStreams = await sdk.live.listStreams({
-   *   hostId: 'user-uuid',
-   *   page: 1
-   * });
+   * // Lives programmés, deuxième page
+   * const scheduled = await sdk.live.listStreams({ status: 'scheduled', page: 2, limit: 20 });
    * ```
    */
-  async listStreams(
-    options?: PaginationQuery & {
-      status?: StreamStatus;
-      hostId?: string;
-    }
-  ): Promise<StreamResponse[]> {
+  async listStreams(options?: ListStreamsQuery): Promise<StreamResponse[]> {
     // The API returns a bare array here, not a paginated envelope, unlike the
-    // rest of the SDK's list endpoints.
+    // rest of the SDK's list endpoints. Seuls les filtres lus par l'API sont
+    // transmis.
     return this.client.get<StreamResponse[]>('/live/streams', {
-      params: options,
+      params: { status: options?.status, page: options?.page, limit: options?.limit },
     });
   }
 
@@ -313,23 +311,24 @@ export class LiveModule {
   /**
    * Send a reaction to a stream
    *
+   * Les réactions sont limitées en débit par utilisateur : une réaction
+   * refusée revient avec `accepted: false`, et `retryAfterMs` indique alors
+   * le délai à respecter.
+   *
    * @example
    * ```ts
    * const result = await sdk.live.sendReaction('stream-uuid', {
    *   userId: 'user-uuid',
    *   emoji: '❤️'
    * });
-   * console.log(result.accepted); // true if accepted
+   * if (!result.accepted) console.log(`Réessayer dans ${result.retryAfterMs ?? 200} ms`);
    * ```
    */
   async sendReaction(
     streamId: string,
     request: { userId: string; emoji: string }
-  ): Promise<{ accepted: boolean; message: string }> {
-    return this.client.post<{ accepted: boolean; message: string }>(
-      `/live/streams/${streamId}/reactions`,
-      request
-    );
+  ): Promise<StreamReactionResponse> {
+    return this.client.post<StreamReactionResponse>(`/live/streams/${streamId}/reactions`, request);
   }
 
   /**
@@ -352,21 +351,16 @@ export class LiveModule {
   /**
    * Get stream statistics
    *
+   * `durationSeconds` vaut `null` tant que le live n'a pas démarré.
+   *
    * @example
    * ```ts
    * const stats = await sdk.live.getStats('stream-uuid');
-   * console.log(stats.totalViews, stats.peakViewers, stats.totalReactions);
+   * console.log(stats.viewerCount, stats.peakViewerCount, stats.totalReactions);
+   * for (const { emoji, count } of stats.reactionsByEmoji) console.log(emoji, count);
    * ```
    */
-  async getStats(streamId: string): Promise<{
-    totalViews: number;
-    uniqueViewers: number;
-    peakViewers: number;
-    averageWatchTime: number;
-    totalComments: number;
-    totalReactions: number;
-    duration?: number;
-  }> {
-    return this.client.get(`/live/streams/${streamId}/stats`);
+  async getStats(streamId: string): Promise<StreamStats> {
+    return this.client.get<StreamStats>(`/live/streams/${streamId}/stats`);
   }
 }

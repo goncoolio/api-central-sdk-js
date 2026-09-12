@@ -6,8 +6,12 @@ import type {
   CallParticipantInfo,
   PaginationQuery,
   IceServersResponse,
+  LiveKitTokenResponse,
   SdpRequest,
   IceCandidateRequest,
+  MuteResponse,
+  VideoToggleResponse,
+  ScreenShareResponse,
 } from '../types';
 
 // =============================================================================
@@ -24,18 +28,20 @@ export class CallsModule {
   /**
    * Initiate a call
    *
+   * Exige un jeton utilisateur : l'initiateur est l'utilisateur du jeton,
+   * ajouté d'office aux participants. `participantIds` liste les appelés.
+   *
    * @example
    * ```ts
    * // 1:1 video call
    * const call = await sdk.calls.initiate({
-   *   initiatorId: 'user-uuid',
    *   participantIds: ['other-user-uuid'],
    *   callType: 'video'
    * });
    *
-   * // Group audio call from conversation
+   * // Group audio call attached to a conversation
    * const groupCall = await sdk.calls.initiate({
-   *   initiatorId: 'user-uuid',
+   *   participantIds: ['user-2-uuid', 'user-3-uuid'],
    *   conversationId: 'conv-uuid',
    *   callType: 'audio'
    * });
@@ -166,11 +172,8 @@ export class CallsModule {
     callId: string,
     userId: string,
     request: { muted: boolean }
-  ): Promise<{ success: boolean }> {
-    return this.client.put<{ success: boolean }>(
-      `/calls/${callId}/participants/${userId}/mute`,
-      request
-    );
+  ): Promise<MuteResponse> {
+    return this.client.put<MuteResponse>(`/calls/${callId}/participants/${userId}/mute`, request);
   }
 
   /**
@@ -185,8 +188,8 @@ export class CallsModule {
     callId: string,
     userId: string,
     request: { enabled: boolean }
-  ): Promise<{ success: boolean }> {
-    return this.client.put<{ success: boolean }>(
+  ): Promise<VideoToggleResponse> {
+    return this.client.put<VideoToggleResponse>(
       `/calls/${callId}/participants/${userId}/video`,
       request
     );
@@ -204,8 +207,8 @@ export class CallsModule {
     callId: string,
     userId: string,
     request: { sharing: boolean }
-  ): Promise<{ screenSharing: boolean }> {
-    return this.client.put<{ screenSharing: boolean }>(
+  ): Promise<ScreenShareResponse> {
+    return this.client.put<ScreenShareResponse>(
       `/calls/${callId}/participants/${userId}/screen`,
       request
     );
@@ -251,7 +254,27 @@ export class CallsModule {
   }
 
   /**
+   * Get a LiveKit token to join the call's SFU room (group calls)
+   *
+   * Exige un jeton utilisateur, et que cet utilisateur participe à l'appel :
+   * sinon l'API répond 403. Un appel inconnu donne 404, un serveur sans
+   * LiveKit configuré 400. Se connecter à l'URL renvoyée, jamais à une URL
+   * codée en dur : `GroupCallManager` (navigateur) s'en charge.
+   *
+   * @example
+   * ```ts
+   * const { url, token } = await sdk.calls.getLiveKitToken('call-uuid');
+   * await room.connect(url, token); // Room de livekit-client
+   * ```
+   */
+  async getLiveKitToken(callId: string): Promise<LiveKitTokenResponse> {
+    return this.client.get<LiveKitTokenResponse>(`/calls/${callId}/token`);
+  }
+
+  /**
    * Send an SDP offer to a participant
+   *
+   * L'API exige `sdp_type` : il vaut `'offer'` sauf si `sdpType` est fourni.
    *
    * @example
    * ```ts
@@ -262,11 +285,16 @@ export class CallsModule {
    * ```
    */
   async sendOffer(callId: string, request: SdpRequest): Promise<{ success: boolean }> {
-    return this.client.post<{ success: boolean }>(`/calls/${callId}/offer`, request);
+    return this.client.post<{ success: boolean }>(`/calls/${callId}/offer`, {
+      ...request,
+      sdpType: request.sdpType ?? 'offer',
+    });
   }
 
   /**
    * Send an SDP answer to a participant
+   *
+   * L'API exige `sdp_type` : il vaut `'answer'` sauf si `sdpType` est fourni.
    *
    * @example
    * ```ts
@@ -277,7 +305,10 @@ export class CallsModule {
    * ```
    */
   async sendAnswer(callId: string, request: SdpRequest): Promise<{ success: boolean }> {
-    return this.client.post<{ success: boolean }>(`/calls/${callId}/answer-sdp`, request);
+    return this.client.post<{ success: boolean }>(`/calls/${callId}/answer-sdp`, {
+      ...request,
+      sdpType: request.sdpType ?? 'answer',
+    });
   }
 
   /**

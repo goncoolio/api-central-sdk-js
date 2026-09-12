@@ -1,6 +1,7 @@
 import type { HttpClient } from '../utils/http-client';
 import type {
   PreKeyBundle,
+  RotateSignedPrekeyRequest,
   PreKeyCountResponse,
   RegisterKeysRequest,
   UploadPrekeysRequest,
@@ -27,17 +28,14 @@ export class EncryptionModule {
    * @example
    * ```ts
    * await sdk.encryption.registerKeys({
-   *   userId: 'user-uuid',
    *   identityKey: 'base64-encoded-identity-public-key',
-   *   signedPrekey: {
-   *     keyId: 1,
-   *     publicKey: 'base64-encoded-signed-prekey',
-   *     signature: 'base64-encoded-signature'
-   *   },
+   *   signedPrekeyId: 1,
+   *   signedPrekey: 'base64-encoded-signed-prekey',
+   *   signedPrekeySignature: 'base64-encoded-signature',
    *   prekeys: [
-   *     { keyId: 1, publicKey: 'base64-prekey-1' },
-   *     { keyId: 2, publicKey: 'base64-prekey-2' },
-   *     // ... up to 100 prekeys recommended
+   *     { prekeyId: 1, prekey: 'base64-prekey-1' },
+   *     { prekeyId: 2, prekey: 'base64-prekey-2' },
+   *     // ... une centaine de prekeys recommandés
    *   ]
    * });
    * ```
@@ -71,11 +69,10 @@ export class EncryptionModule {
    * @example
    * ```ts
    * await sdk.encryption.uploadPrekeys({
-   *   userId: 'user-uuid',
    *   prekeys: [
-   *     { keyId: 101, publicKey: 'base64-prekey-101' },
-   *     { keyId: 102, publicKey: 'base64-prekey-102' },
-   *     // ... more prekeys
+   *     { prekeyId: 101, prekey: 'base64-prekey-101' },
+   *     { prekeyId: 102, prekey: 'base64-prekey-102' },
+   *     // ... d'autres prekeys
    *   ]
    * });
    * ```
@@ -89,26 +86,18 @@ export class EncryptionModule {
    *
    * Should be called periodically (e.g., every 7-30 days) for security.
    *
+   * L'API prend l'utilisateur dans le jeton : le corps ne porte que la clé.
+   *
    * @example
    * ```ts
    * await sdk.encryption.rotateSignedPrekey({
-   *   userId: 'user-uuid',
-   *   signedPrekey: {
-   *     keyId: 2,
-   *     publicKey: 'base64-new-signed-prekey',
-   *     signature: 'base64-new-signature'
-   *   }
+   *   signedPrekeyId: 2,
+   *   signedPrekey: 'base64-encoded-signed-prekey',
+   *   signedPrekeySignature: 'base64-encoded-signature'
    * });
    * ```
    */
-  async rotateSignedPrekey(request: {
-    userId: string;
-    signedPrekey: {
-      keyId: number;
-      publicKey: string;
-      signature: string;
-    };
-  }): Promise<{ success: boolean }> {
+  async rotateSignedPrekey(request: RotateSignedPrekeyRequest): Promise<{ success: boolean }> {
     return this.client.post<{ success: boolean }>('/encryption/keys/rotate', request);
   }
 

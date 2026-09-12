@@ -50,17 +50,20 @@ describe('ApiCentral SDK', () => {
     });
 
     it('should get user token', async () => {
-      const userTokenResponse = {
-        token: 'user-jwt-token',
-        userId: 'user-123',
-        expiresIn: 86400,
-        tokenType: 'Bearer',
-      };
-      mockResponse(userTokenResponse);
+      // Réponse réelle de l'API (UserTokenResponse, src/types/dto.rs)
+      mockResponse({
+        socket_token: 'user-jwt-token',
+        expires_in: 86400,
+        user: { id: 'user-123', external_user_id: 'ext-123', display_name: 'Jane' },
+      });
 
       const result = await sdk.auth.getUserToken({ userId: 'user-123' });
 
-      expect(result).toEqual(userTokenResponse);
+      expect(result).toEqual({
+        socketToken: 'user-jwt-token',
+        expiresIn: 86400,
+        user: { id: 'user-123', externalUserId: 'ext-123', displayName: 'Jane' },
+      });
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/s2s/v1/auth/user-token',
         expect.objectContaining({ method: 'POST' })
@@ -515,14 +518,15 @@ describe('ApiCentral SDK', () => {
     });
 
     it('should send a reaction', async () => {
-      mockResponse({ success: true });
+      // Réponse réelle de l'API : { accepted, message }
+      mockResponse({ accepted: true, message: 'Reaction added' });
 
       const result = await sdk.live.sendReaction('stream-uuid', {
         userId: 'user-uuid',
         emoji: '❤️',
       });
 
-      expect(result.success).toBe(true);
+      expect(result.accepted).toBe(true);
     });
 
     it('should get viewer count', async () => {
@@ -594,11 +598,12 @@ describe('ApiCentral SDK', () => {
     });
 
     it('should set muted status', async () => {
-      mockResponse({ success: true });
+      // Réponse réelle de l'API : { "muted": true }
+      mockResponse({ muted: true });
 
       const result = await sdk.calls.setMuted('call-uuid', 'user-uuid', { muted: true });
 
-      expect(result.success).toBe(true);
+      expect(result.muted).toBe(true);
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/s2s/v1/calls/call-uuid/participants/user-uuid/mute',
         expect.objectContaining({ method: 'PUT' })
@@ -629,16 +634,13 @@ describe('ApiCentral SDK', () => {
       mockResponse({ success: true });
 
       const result = await sdk.encryption.registerKeys({
-        userId: 'user-uuid',
         identityKey: 'base64-identity-key',
-        signedPrekey: {
-          keyId: 1,
-          publicKey: 'base64-signed-prekey',
-          signature: 'base64-signature',
-        },
+        signedPrekeyId: 1,
+        signedPrekey: 'base64-signed-prekey',
+        signedPrekeySignature: 'base64-signature',
         prekeys: [
-          { keyId: 1, publicKey: 'base64-prekey-1' },
-          { keyId: 2, publicKey: 'base64-prekey-2' },
+          { prekeyId: 1, prekey: 'base64-prekey-1' },
+          { prekeyId: 2, prekey: 'base64-prekey-2' },
         ],
       });
 
@@ -686,15 +688,24 @@ describe('ApiCentral SDK', () => {
       mockResponse({ success: true });
 
       const result = await sdk.encryption.rotateSignedPrekey({
-        userId: 'user-uuid',
-        signedPrekey: {
-          keyId: 2,
-          publicKey: 'base64-new-signed-prekey',
-          signature: 'base64-new-signature',
-        },
+        signedPrekeyId: 2,
+        signedPrekey: 'base64-new-signed-prekey',
+        signedPrekeySignature: 'base64-new-signature',
       });
 
       expect(result.success).toBe(true);
+      // L'API prend l'utilisateur dans le jeton : le corps ne porte que la clé.
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/encryption/keys/rotate',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            signed_prekey_id: 2,
+            signed_prekey: 'base64-new-signed-prekey',
+            signed_prekey_signature: 'base64-new-signature',
+          }),
+        })
+      );
     });
   });
 

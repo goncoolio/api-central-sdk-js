@@ -1,15 +1,41 @@
 import type { HttpClient } from '../utils/http-client';
 import type { WebSocketClient } from '../utils/ws-client';
-import type { CallType, CallResponse } from '../types';
+import type { CallType, CallResponse, IceServersResponse } from '../types';
+import { notifyParticipantMedia, toError } from './call-shared';
+import type {
+  CallConnectedEvent,
+  CallEndedEvent,
+  CallErrorEvent,
+  CallManagerState,
+  CallParticipantEvent,
+  IncomingCallEvent,
+  MuteChangedEvent,
+  ParticipantMediaEndpoint,
+  RemoteStreamEvent,
+  ScreenShareChangedEvent,
+  VideoChangedEvent,
+} from './call-shared';
 
 // =============================================================================
 // Call Manager - WebRTC audio/video call orchestration
+//
+// Navigateur uniquement : s'appuie sur RTCPeerConnection et
+// navigator.mediaDevices, absents de Node.js.
 // =============================================================================
 
 export interface CallManagerConfig {
   /** Default media constraints */
   defaultAudioConstraints?: MediaTrackConstraints | boolean;
   defaultVideoConstraints?: MediaTrackConstraints | boolean;
+  /**
+   * Identifiant (UUID API Central) de l'utilisateur local.
+   *
+   * Sert à notifier l'API des bascules micro, caméra et partage d'écran
+   * (`/calls/{id}/participants/{userId}/...`). Facultatif quand le SDK peut
+   * le déduire : jeton utilisateur passé à `connectRealtime`, ou événement
+   * WebSocket `connected`. S'il est fourni, il prime sur ces valeurs déduites.
+   */
+  userId?: string;
 }
 
 export interface StartCallParams {
@@ -19,7 +45,8 @@ export interface StartCallParams {
   encryptionEnabled?: boolean;
 }
 
-export type CallManagerState = 'idle' | 'outgoing' | 'incoming' | 'connecting' | 'connected' | 'ended';
+// États et charges d'événements partagés avec GroupCallManager.
+export type { CallErrorEvent, CallManagerState } from './call-shared';
 
 interface PeerState {
   pc: RTCPeerConnection;
@@ -27,15 +54,25 @@ interface PeerState {
 }
 
 // Event handler types
-type IncomingCallHandler = (data: { callId: string; callerId: string; callerName?: string; callType: string }) => void;
-type CallConnectedHandler = (data: { callId: string; participantIds: string[] }) => void;
-type CallEndedHandler = (data: { callId: string; reason: string; durationSeconds?: number }) => void;
-type RemoteStreamHandler = (data: { userId: string; stream: MediaStream }) => void;
-type ParticipantHandler = (data: { callId: string; userId: string; userName?: string }) => void;
-type MuteChangedHandler = (data: { callId: string; userId: string; isMuted: boolean }) => void;
-type VideoChangedHandler = (data: { callId: string; userId: string; isVideoEnabled: boolean }) => void;
-type ScreenShareChangedHandler = (data: { callId: string; userId: string; isScreenSharing: boolean }) => void;
+type IncomingCallHandler = (data: IncomingCallEvent) => void;
+type CallConnectedHandler = (data: CallConnectedEvent) => void;
+type CallEndedHandler = (data: CallEndedEvent) => void;
+type RemoteStreamHandler = (data: RemoteStreamEvent) => void;
+type ParticipantHandler = (data: CallParticipantEvent) => void;
+type MuteChangedHandler = (data: MuteChangedEvent) => void;
+type VideoChangedHandler = (data: VideoChangedEvent) => void;
+type ScreenShareChangedHandler = (data: ScreenShareChangedEvent) => void;
 type StateChangedHandler = (state: CallManagerState) => void;
+type CallErrorHandler = (data: CallErrorEvent) => void;
+
+/** Levée quand le temps réel manque : la signalisation WebRTC serait perdue. */
+const MISSING_WEBSOCKET =
+  'Temps réel non connecté : appelez connectRealtime() avant de passer ou de décrocher un appel.';
+
+/** L'utilisateur a fermé le sélecteur de partage d'écran : ce n'est pas une erreur. */
+function isUserCancellation(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'NotAllowedError' || error.name === 'AbortError');
+}
 
 export class CallManager {
   private httpClient: HttpClient;
@@ -45,6 +82,11 @@ export class CallManager {
   // Current call state
   private _state: CallManagerState = 'idle';
   private _currentCallId: string | null = null;
+  // Appel que l'on vient de quitter : sa fin (call_ended) reste transmise.
+  private _lastCallId: string | null = null;
+  // Salle de signalisation (call_join) rejointe pour l'appel géré.
+  private _joinedRoom = false;
+  private _localUserId: string | null;
   private _localStream: MediaStream | null = null;
   private _screenStream: MediaStream | null = null;
   private _isMuted = false;
@@ -70,11 +112,13 @@ export class CallManager {
     onVideoChanged: null as VideoChangedHandler | null,
     onScreenShareChanged: null as ScreenShareChangedHandler | null,
     onStateChanged: null as StateChangedHandler | null,
+    onError: null as CallErrorHandler | null,
   };
 
   constructor(httpClient: HttpClient, config?: CallManagerConfig) {
     this.httpClient = httpClient;
     this.config = config ?? {};
+    this._localUserId = this.config.userId ?? null;
   }
 
   // ---------------------------------------------------------------------------
@@ -87,6 +131,18 @@ export class CallManager {
   get isMuted(): boolean { return this._isMuted; }
   get isVideoEnabled(): boolean { return this._isVideoEnabled; }
   get isScreenSharing(): boolean { return this._isScreenSharing; }
+
+  /** Identifiant de l'utilisateur local, `null` tant qu'il n'est pas connu. */
+  get localUserId(): string | null { return this._localUserId; }
+
+  /**
+   * Renseigne l'identifiant de l'utilisateur local, déduit du contexte
+   * d'authentification. Sans effet si `userId` est fixé dans la configuration.
+   */
+  setLocalUserId(userId: string): void {
+    if (this.config.userId) return;
+    this._localUserId = userId;
+  }
 
   /** Get remote stream for a specific participant */
   getRemoteStream(userId: string): MediaStream | null {
@@ -117,8 +173,20 @@ export class CallManager {
   set onScreenShareChanged(handler: ScreenShareChangedHandler | null) { this.handlers.onScreenShareChanged = handler; }
   set onStateChanged(handler: StateChangedHandler | null) { this.handlers.onStateChanged = handler; }
 
+  /**
+   * Erreurs survenues en arrière-plan, que personne n'attend (par exemple la
+   * notification de l'API quand le partage d'écran est arrêté depuis le
+   * navigateur). Les méthodes attendues (`toggleMute`…) rejettent leur
+   * promesse à la place.
+   */
+  set onError(handler: CallErrorHandler | null) { this.handlers.onError = handler; }
+
   // ---------------------------------------------------------------------------
   // WebSocket Binding
+  //
+  // Seuls les événements de l'appel géré sont traités : ceux d'un autre appel
+  // (reçu pendant qu'on est occupé, ou appel de groupe piloté ailleurs) ne
+  // doivent jamais toucher à l'appel en cours.
   // ---------------------------------------------------------------------------
 
   /** Bind to a WebSocket client for signaling */
@@ -127,6 +195,12 @@ export class CallManager {
     this.ws = ws;
 
     this.wsUnsubs.push(
+      // À la connexion, le serveur annonce l'utilisateur du jeton.
+      ws.on('connected', (data: any) => {
+        const userId = data.user?.id;
+        if (typeof userId === 'string') this.setLocalUserId(userId);
+      }),
+
       ws.on('call_incoming', (data: any) => {
         if (this._state !== 'idle') return;
         this.setState('incoming');
@@ -135,31 +209,40 @@ export class CallManager {
       }),
 
       ws.on('call_connected', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.setState('connected');
         this.handlers.onCallConnected?.(data);
       }),
 
       ws.on('call_ended', (data: any) => {
+        // La fin de l'appel que l'on vient de quitter arrive souvent après la
+        // réponse REST de endCall() : elle reste transmise, une fois.
+        const isCurrent = this.isCurrentCall(data.callId);
+        if (!isCurrent && data.callId !== this._lastCallId) return;
         this.handlers.onCallEnded?.(data);
-        this.cleanup();
+        if (isCurrent) this.cleanup();
+        this._lastCallId = null;
       }),
 
       ws.on('call_answered', (data: any) => {
         // Another participant answered - start WebRTC signaling with them
-        if (this._currentCallId === data.callId && data.userId) {
-          this.createPeerAndOffer(data.userId);
+        if (this.isNegotiating(data.callId) && data.userId && !this.isLocalUser(data.userId)) {
+          this.inBackground(this.createPeerAndOffer(data.userId));
         }
       }),
 
       ws.on('call_participant_joined', (data: any) => {
+        // Le serveur diffuse aussi notre propre arrivée dans la salle d'appel.
+        if (!this.isCurrentCall(data.callId) || this.isLocalUser(data.userId)) return;
         this.handlers.onParticipantJoined?.(data);
         // Create peer connection for new participant
-        if (this._currentCallId === data.callId && data.userId) {
-          this.createPeerAndOffer(data.userId);
+        if (this.isNegotiating(data.callId) && data.userId) {
+          this.inBackground(this.createPeerAndOffer(data.userId));
         }
       }),
 
       ws.on('call_participant_left', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.handlers.onParticipantLeft?.(data);
         this.removePeer(data.userId);
       }),
@@ -170,27 +253,33 @@ export class CallManager {
 
       // WebRTC signaling events
       ws.on('call_offer_received', (data: any) => {
-        this.handleRemoteOffer(data.fromUserId, data.sdp);
+        if (!this.isCurrentCall(data.callId)) return;
+        this.inBackground(this.handleRemoteOffer(data.fromUserId, data.sdp));
       }),
 
       ws.on('call_answer_received', (data: any) => {
-        this.handleRemoteAnswer(data.fromUserId, data.sdp);
+        if (!this.isCurrentCall(data.callId)) return;
+        this.inBackground(this.handleRemoteAnswer(data.fromUserId, data.sdp));
       }),
 
       ws.on('call_ice_candidate_received', (data: any) => {
-        this.handleRemoteIceCandidate(data.fromUserId, data.candidate);
+        if (!this.isCurrentCall(data.callId)) return;
+        this.inBackground(this.handleRemoteIceCandidate(data.fromUserId, data.candidate));
       }),
 
       // Media state changes
       ws.on('call_mute_changed', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.handlers.onMuteChanged?.(data);
       }),
 
       ws.on('call_video_changed', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.handlers.onVideoChanged?.(data);
       }),
 
       ws.on('call_screen_share_changed', (data: any) => {
+        if (!this.isCurrentCall(data.callId)) return;
         this.handlers.onScreenShareChanged?.(data);
       }),
     );
@@ -209,86 +298,157 @@ export class CallManager {
   // Call Lifecycle
   // ---------------------------------------------------------------------------
 
-  /** Start an outgoing call */
-  async startCall(params: StartCallParams): Promise<CallResponse> {
-    if (this._state !== 'idle') {
-      throw new Error('Already in a call');
-    }
+  // En cas d'échec, les méthodes ci-dessous rejettent leur promesse et
+  // ramènent le gestionnaire au repos : média libéré, salle quittée. Aucune ne
+  // laisse un appel à moitié établi.
 
+  /**
+   * Start an outgoing call
+   *
+   * Rejette si le temps réel n'est pas branché (la signalisation serait
+   * perdue), si le média ou l'API échouent, ou si les serveurs ICE sont
+   * indisponibles : l'appel déjà créé est alors terminé côté API.
+   */
+  async startCall(params: StartCallParams): Promise<CallResponse> {
+    this.assertCanCall();
     this.setState('outgoing');
 
-    // Acquire local media
-    const isVideo = params.callType === 'video';
-    await this.acquireLocalMedia(true, isVideo);
-
-    // Initiate call via REST API
-    const call = await this.httpClient.post<CallResponse>('/calls', params);
-    this._currentCallId = call.id;
-
-    // Fetch ICE servers
-    await this.fetchIceServers(call.id);
-
-    // Join call room via WebSocket
-    this.ws?.send('call_join', { callId: call.id });
-
-    return call;
+    let call: CallResponse | null = null;
+    try {
+      await this.acquireLocalMedia(true, params.callType === 'video');
+      call = await this.httpClient.post<CallResponse>('/calls', params);
+      this._currentCallId = call.id;
+      await this.fetchIceServers(call.id);
+      this.joinCallRoom(call.id);
+      return call;
+    } catch (error) {
+      if (call) await this.endAbandonedCall(call.id);
+      this.cleanup();
+      throw error;
+    }
   }
 
-  /** Answer an incoming call */
+  /**
+   * Démarre, côté média, un appel sortant déjà créé (POST /calls) : micro et
+   * caméra, serveurs ICE, salle de signalisation. AutoCallManager crée
+   * l'appel avant d'en choisir le mode. Un appel qui ne peut pas démarrer est
+   * terminé côté API, et la promesse rejette.
+   */
+  async startExistingCall(call: CallResponse): Promise<CallResponse> {
+    if (this._state !== 'idle') throw new Error('Already in a call');
+    this.setState('outgoing');
+    this._currentCallId = call.id;
+
+    try {
+      if (!this.ws) throw new Error(MISSING_WEBSOCKET);
+      await this.acquireLocalMedia(true, call.callType === 'video');
+      await this.fetchIceServers(call.id);
+      this.joinCallRoom(call.id);
+      return call;
+    } catch (error) {
+      await this.endAbandonedCall(call.id);
+      this.cleanup();
+      throw error;
+    }
+  }
+
+  /**
+   * Oublie l'appel entrant `callId` sans le refuser : un autre gestionnaire
+   * le prend en charge (appel de groupe décroché par AutoCallManager). Sans
+   * effet sur un autre appel, ni sur un appel déjà décroché.
+   */
+  dismissIncomingCall(callId: string): void {
+    if (this._state !== 'incoming' || this._currentCallId !== callId) return;
+    this.cleanup();
+  }
+
+  /**
+   * Answer an incoming call
+   *
+   * Les serveurs ICE sont récupérés avant de décrocher : si le média ou la
+   * configuration échouent, l'appel n'est pas décroché et continue de sonner.
+   */
   async answerCall(callId?: string): Promise<CallResponse> {
     const id = callId ?? this._currentCallId;
     if (!id) throw new Error('No call to answer');
+    this.assertCanAnswer();
 
     this._currentCallId = id;
     this.setState('connecting');
 
-    // Get call details to know if it's audio or video
-    const callDetails = await this.httpClient.get<CallResponse>(`/calls/${id}`);
-    const isVideo = callDetails.callType === 'video';
-
-    // Acquire local media
-    await this.acquireLocalMedia(true, isVideo);
-
-    // Answer via REST
-    const call = await this.httpClient.post<CallResponse>(`/calls/${id}/answer`);
-
-    // Fetch ICE servers
-    await this.fetchIceServers(id);
-
-    // Join call room via WebSocket
-    this.ws?.send('call_join', { callId: id });
-
-    return call;
+    try {
+      // Get call details to know if it's audio or video
+      const callDetails = await this.httpClient.get<CallResponse>(`/calls/${id}`);
+      await this.acquireLocalMedia(true, callDetails.callType === 'video');
+      await this.fetchIceServers(id);
+      const call = await this.httpClient.post<CallResponse>(`/calls/${id}/answer`);
+      this.joinCallRoom(id);
+      return call;
+    } catch (error) {
+      this.finishCall(id);
+      throw error;
+    }
   }
 
-  /** Decline an incoming call */
+  /**
+   * Decline an incoming call
+   *
+   * Refuser un autre appel que l'appel géré (reçu pendant un appel) ne touche
+   * pas à l'appel en cours. L'appel refusé est libéré localement même si l'API
+   * n'a pas pu être prévenue ; la promesse rejette alors.
+   */
   async declineCall(callId?: string): Promise<void> {
     const id = callId ?? this._currentCallId;
     if (!id) return;
 
-    await this.httpClient.post(`/calls/${id}/decline`);
-    this.cleanup();
+    try {
+      await this.httpClient.post(`/calls/${id}/decline`);
+    } finally {
+      this.finishCall(id);
+    }
   }
 
-  /** End the current call */
+  /**
+   * End the current call
+   *
+   * Le média est libéré même si l'API n'a pas pu être prévenue ; la promesse
+   * rejette alors.
+   */
   async endCall(): Promise<void> {
-    if (!this._currentCallId) return;
+    const id = this._currentCallId;
+    if (!id) return;
 
-    await this.httpClient.post(`/calls/${this._currentCallId}/end`);
-    this.cleanup();
+    try {
+      await this.httpClient.post(`/calls/${id}/end`);
+    } finally {
+      this.finishCall(id);
+    }
   }
 
-  /** Leave the current call (call continues for others) */
+  /**
+   * Leave the current call (call continues for others)
+   *
+   * Le média est libéré même si l'API n'a pas pu être prévenue ; la promesse
+   * rejette alors.
+   */
   async leaveCall(): Promise<void> {
-    if (!this._currentCallId) return;
+    const id = this._currentCallId;
+    if (!id) return;
 
-    this.ws?.send('call_leave', { callId: this._currentCallId });
-    await this.httpClient.post(`/calls/${this._currentCallId}/leave`);
-    this.cleanup();
+    this.leaveCallRoom();
+    try {
+      await this.httpClient.post(`/calls/${id}/leave`);
+    } finally {
+      this.finishCall(id);
+    }
   }
 
   // ---------------------------------------------------------------------------
   // Media Controls
+  //
+  // L'état local (pistes, drapeaux) est appliqué d'abord et n'est jamais
+  // annulé. La promesse rejette si l'API n'a pas pu être notifiée :
+  // identifiant local inconnu ou requête en échec.
   // ---------------------------------------------------------------------------
 
   /** Toggle microphone mute */
@@ -301,11 +461,7 @@ export class CallManager {
       }
     }
 
-    if (this._currentCallId) {
-      await this.httpClient.put(`/calls/${this._currentCallId}/participants/me/mute`, {
-        muted: this._isMuted,
-      }).catch(() => {});
-    }
+    await this.notifyParticipantState('mute', { muted: this._isMuted });
 
     return this._isMuted;
   }
@@ -320,16 +476,17 @@ export class CallManager {
       }
     }
 
-    if (this._currentCallId) {
-      await this.httpClient.put(`/calls/${this._currentCallId}/participants/me/video`, {
-        enabled: this._isVideoEnabled,
-      }).catch(() => {});
-    }
+    await this.notifyParticipantState('video', { enabled: this._isVideoEnabled });
 
     return this._isVideoEnabled;
   }
 
-  /** Toggle screen sharing */
+  /**
+   * Toggle screen sharing
+   *
+   * Renvoie `false` si l'utilisateur ferme le sélecteur de partage ; les
+   * autres échecs de capture ou de remplacement de piste rejettent.
+   */
   async toggleScreenShare(): Promise<boolean> {
     if (this._isScreenSharing) {
       // Stop screen sharing
@@ -339,46 +496,63 @@ export class CallManager {
 
       // Replace screen track with camera video track in all peers
       const videoTrack = this._localStream?.getVideoTracks()[0];
-      if (videoTrack) {
-        for (const [, peer] of this.peers) {
-          const sender = peer.pc.getSenders().find((s) => s.track?.kind === 'video');
-          sender?.replaceTrack(videoTrack);
-        }
-      }
+      if (videoTrack) await this.replaceVideoTrack(videoTrack);
     } else {
       // Start screen sharing
+      let screenStream: MediaStream;
       try {
-        this._screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: false,
-        });
-        this._isScreenSharing = true;
+        screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      } catch (error) {
+        if (isUserCancellation(error)) return false;
+        throw error;
+      }
 
-        const screenTrack = this._screenStream.getVideoTracks()[0];
-        if (!screenTrack) return false;
-
-        // Replace camera video track with screen track in all peers
-        for (const [, peer] of this.peers) {
-          const sender = peer.pc.getSenders().find((s) => s.track?.kind === 'video');
-          sender?.replaceTrack(screenTrack);
-        }
-
-        // Auto-stop when user stops sharing from browser UI
-        screenTrack.onended = () => {
-          this.toggleScreenShare();
-        };
-      } catch {
+      const screenTrack = screenStream.getVideoTracks()[0];
+      if (!screenTrack) {
+        screenStream.getTracks().forEach((t) => t.stop());
         return false;
       }
+      this._screenStream = screenStream;
+      this._isScreenSharing = true;
+
+      // Replace camera video track with screen track in all peers
+      await this.replaceVideoTrack(screenTrack);
+
+      // Auto-stop when user stops sharing from browser UI. Personne
+      // n'attend cette promesse : son échec passe par onError.
+      screenTrack.onended = () => this.inBackground(this.toggleScreenShare());
     }
 
-    if (this._currentCallId) {
-      await this.httpClient.put(`/calls/${this._currentCallId}/participants/me/screen`, {
-        sharing: this._isScreenSharing,
-      }).catch(() => {});
-    }
+    await this.notifyParticipantState('screen', { sharing: this._isScreenSharing });
 
     return this._isScreenSharing;
+  }
+
+  /** Remplace la piste vidéo envoyée à chaque pair ; rejette si l'un échoue. */
+  private async replaceVideoTrack(track: MediaStreamTrack): Promise<void> {
+    const senders = [...this.peers.values()].map((peer) =>
+      peer.pc.getSenders().find((sender) => sender.track?.kind === 'video')
+    );
+    await Promise.all(senders.map((sender) => sender?.replaceTrack(track)));
+  }
+
+  /** Notifie l'API de l'état média du participant local, adressé par son identifiant réel. */
+  private async notifyParticipantState(
+    endpoint: ParticipantMediaEndpoint,
+    body: Record<string, boolean>
+  ): Promise<void> {
+    const callId = this._currentCallId;
+    if (!callId) return;
+    await notifyParticipantMedia(this.httpClient, callId, this._localUserId, endpoint, body);
+  }
+
+  private emitError(error: unknown): void {
+    this.handlers.onError?.({ callId: this._currentCallId, error: toError(error) });
+  }
+
+  /** Tâche lancée par un événement, que personne n'attend : son échec passe par onError. */
+  private inBackground(task: Promise<unknown>): void {
+    task.catch((error: unknown) => this.emitError(error));
   }
 
   // ---------------------------------------------------------------------------
@@ -394,16 +568,14 @@ export class CallManager {
     this._localStream = await navigator.mediaDevices.getUserMedia(constraints);
   }
 
+  /**
+   * Serveurs STUN/TURN de l'appel, identifiants TURN temporaires compris.
+   * Pas de STUN public de secours : un échec rejette, car sans TURN l'appel
+   * échouerait plus tard, sans explication, derrière un NAT.
+   */
   private async fetchIceServers(callId: string): Promise<void> {
-    try {
-      const response = await this.httpClient.get<{ iceServers: RTCIceServer[] }>(
-        `/calls/${callId}/ice-servers`
-      );
-      this.iceServers = response.iceServers;
-    } catch {
-      // Fallback to default STUN
-      this.iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
-    }
+    const response = await this.httpClient.get<IceServersResponse>(`/calls/${callId}/ice-servers`);
+    this.iceServers = response.iceServers;
   }
 
   private createPeerConnection(remoteUserId: string): PeerState {
@@ -442,6 +614,8 @@ export class CallManager {
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'connected') {
         this.setState('connected');
+      } else if (pc.connectionState === 'failed') {
+        this.emitError(new Error(`Connexion WebRTC avec ${remoteUserId} en échec`));
       }
     };
 
@@ -510,6 +684,74 @@ export class CallManager {
   // State & Cleanup
   // ---------------------------------------------------------------------------
 
+  /** L'événement concerne-t-il l'appel géré ? */
+  private isCurrentCall(callId: unknown): boolean {
+    return typeof callId === 'string' && callId === this._currentCallId;
+  }
+
+  /** Appel géré et rejoint : la négociation WebRTC est permise. */
+  private isNegotiating(callId: unknown): boolean {
+    return (
+      this.isCurrentCall(callId) &&
+      (this._state === 'outgoing' || this._state === 'connecting' || this._state === 'connected')
+    );
+  }
+
+  private isLocalUser(userId: unknown): boolean {
+    return this._localUserId !== null && userId === this._localUserId;
+  }
+
+  /** Libère l'appel `callId` s'il est toujours l'appel géré. */
+  private finishCall(callId: string): void {
+    if (this._currentCallId !== callId) return;
+    this.cleanup();
+    this._lastCallId = callId;
+  }
+
+  /** Un appel ne se lance qu'au repos, et avec la signalisation branchée. */
+  /**
+   * Décrocher pendant un appel en cours écraserait l'appel géré et laisserait
+   * son micro et sa caméra ouverts : on refuse avant de toucher à l'état. Un
+   * appel entrant, lui, se décroche depuis l'état `incoming` ou `idle`.
+   */
+  private assertCanAnswer(): void {
+    if (this._state === 'outgoing' || this._state === 'connecting' || this._state === 'connected') {
+      throw new Error('Already in a call');
+    }
+    if (!this.ws) throw new Error(MISSING_WEBSOCKET);
+  }
+
+  private assertCanCall(): void {
+    if (this._state !== 'idle') throw new Error('Already in a call');
+    if (!this.ws) throw new Error(MISSING_WEBSOCKET);
+  }
+
+  private joinCallRoom(callId: string): void {
+    this.ws?.send('call_join', { callId });
+    this._joinedRoom = true;
+  }
+
+  /** Quitte la salle de signalisation : une seule fois, et seulement si on l'a rejointe. */
+  private leaveCallRoom(): void {
+    if (this._joinedRoom && this._currentCallId) {
+      this.ws?.send('call_leave', { callId: this._currentCallId });
+    }
+    this._joinedRoom = false;
+  }
+
+  /**
+   * Termine côté API un appel créé qui ne peut pas aboutir, pour que les
+   * appelés cessent de sonner. Son échec passe par onError : la promesse
+   * attendue par l'application rejette déjà avec la cause première.
+   */
+  private async endAbandonedCall(callId: string): Promise<void> {
+    try {
+      await this.httpClient.post(`/calls/${callId}/end`);
+    } catch (error) {
+      this.emitError(error);
+    }
+  }
+
   private setState(state: CallManagerState): void {
     if (this._state === state) return;
     this._state = state;
@@ -531,10 +773,9 @@ export class CallManager {
     this._screenStream?.getTracks().forEach((t) => t.stop());
     this._screenStream = null;
 
-    // Leave call room
-    if (this._currentCallId && this.ws) {
-      this.ws.send('call_leave', { callId: this._currentCallId });
-    }
+    // Leave call room — seulement si on l'a rejointe : jamais pour un appel
+    // entrant non décroché, ni pour un appel dont le démarrage a échoué.
+    this.leaveCallRoom();
 
     // Reset state
     this._currentCallId = null;
@@ -560,6 +801,7 @@ export class CallManager {
       onVideoChanged: null,
       onScreenShareChanged: null,
       onStateChanged: null,
+      onError: null,
     };
   }
 }

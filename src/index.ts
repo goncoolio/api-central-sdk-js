@@ -1,5 +1,6 @@
 import { HttpClient } from './utils/http-client';
 import type { HttpClientConfig } from './utils/http-client';
+import { readUserIdFromToken } from './utils/jwt';
 import { AuthModule } from './modules/auth';
 import { UsersModule } from './modules/users';
 import { MessagingModule } from './modules/messaging';
@@ -12,6 +13,8 @@ import { RealtimeModule } from './modules/realtime';
 import type { RealtimeConfig } from './modules/realtime';
 import { CallManager } from './modules/call-manager';
 import type { CallManagerConfig } from './modules/call-manager';
+import { GroupCallManager } from './modules/group-call-manager';
+import { AutoCallManager } from './modules/auto-call-manager';
 import { StreamManager } from './modules/stream-manager';
 
 // =============================================================================
@@ -37,6 +40,9 @@ export interface ApiCentralConfig {
 
   /**
    * Pre-authenticated token (optional, alternative to apiKey/apiSecret)
+   *
+   * Un jeton utilisateur renseigne aussi l'identifiant local des
+   * gestionnaires d'appels.
    */
   token?: string;
 
@@ -58,6 +64,8 @@ export interface ApiCentralConfig {
 
   /**
    * Call manager configuration (media constraints, etc.)
+   *
+   * `userId` vaut aussi pour le GroupCallManager.
    */
   callManagerConfig?: CallManagerConfig;
 }
@@ -65,6 +73,7 @@ export interface ApiCentralConfig {
 export class ApiCentral {
   private readonly client: HttpClient;
   private config: ApiCentralConfig;
+  private _autoCallManager: AutoCallManager | null = null;
 
   /**
    * Authentication module for obtaining tokens
@@ -117,6 +126,13 @@ export class ApiCentral {
    * Available after calling `connectRealtime(token)`
    */
   public callManager: CallManager;
+
+  /**
+   * Gestionnaire des appels de groupe via le SFU LiveKit : navigateur
+   * uniquement, livekit-client requis. Lié au temps réel par
+   * `connectRealtime(token)`.
+   */
+  public groupCallManager: GroupCallManager;
 
   /**
    * Stream manager for live streaming viewer experience
@@ -176,7 +192,38 @@ export class ApiCentral {
     this.calls = new CallsModule(this.client);
     this.encryption = new EncryptionModule(this.client);
     this.callManager = new CallManager(this.client, config.callManagerConfig);
+    this.groupCallManager = new GroupCallManager(this.client, { userId: config.callManagerConfig?.userId });
     this.streamManager = new StreamManager();
+
+    if (config.token) {
+      this.adoptUserIdFromToken(config.token);
+    }
+  }
+
+  /**
+   * Point d'entrée unique des appels : choisit, au démarrage de chaque appel,
+   * le P2P (callManager) ou LiveKit dès trois participants
+   * (groupCallManager), et expose le mode retenu. Navigateur uniquement.
+   *
+   * Créé au premier accès : il prend alors les gestionnaires d'événements de
+   * callManager et groupCallManager ; n'en affectez plus directement à ces
+   * deux-là. Les siens survivent aux reconnexions du temps réel.
+   *
+   * @example
+   * ```ts
+   * sdk.connectRealtime(socketToken);
+   * const calls = sdk.autoCallManager;
+   * calls.onIncomingCall = ({ callId }) => calls.answerCall(callId);
+   * calls.onRemoteStream = ({ userId, stream }) => attach(userId, stream);
+   * await calls.startCall({ participantIds: ['user-2', 'user-3'], callType: 'video' });
+   * console.log(calls.mode); // 'group'
+   * ```
+   */
+  get autoCallManager(): AutoCallManager {
+    if (!this._autoCallManager) {
+      this._autoCallManager = new AutoCallManager(this.callManager, this.groupCallManager, this.calls);
+    }
+    return this._autoCallManager;
   }
 
   /**
@@ -234,6 +281,9 @@ export class ApiCentral {
   /**
    * Set or update the authentication token
    *
+   * Un jeton utilisateur met aussi à jour l'identifiant local des
+   * gestionnaires d'appels ; un jeton d'application le laisse inchangé.
+   *
    * @example
    * ```ts
    * sdk.setToken('new-jwt-token');
@@ -241,6 +291,7 @@ export class ApiCentral {
    */
   setToken(token: string): void {
     this.client.setHeader('Authorization', `Bearer ${token}`);
+    this.adoptUserIdFromToken(token);
   }
 
   /**
@@ -257,6 +308,8 @@ export class ApiCentral {
   /**
    * Connect to the real-time server and bind all managers.
    * This enables WebSocket-based messaging, calls, and streaming.
+   *
+   * Exige un WebSocket natif : navigateur, ou Node.js 22 et plus.
    *
    * @param token - User socket token (obtained via `sdk.auth.getUserToken()`)
    * @param options - Optional realtime configuration overrides
@@ -291,20 +344,28 @@ export class ApiCentral {
 
     const wsUrl = options?.wsUrl ?? this.config.wsUrl!;
 
-    // Create and connect the realtime module
-    this.realtime = new RealtimeModule({
+    // Create and connect the realtime module. Il n'est exposé qu'une fois
+    // connecté : un échec (WebSocket natif absent) ne laisse pas de module à
+    // moitié créé.
+    const realtime = new RealtimeModule({
       wsUrl,
       autoReconnect: options?.autoReconnect ?? true,
       heartbeatInterval: options?.heartbeatInterval ?? 30000,
     });
-    this.realtime.connect(token);
+    realtime.connect(token);
+    this.realtime = realtime;
+    this.adoptUserIdFromToken(token);
 
-    // Bind call manager and stream manager to the WebSocket client
-    const wsClient = this.realtime.client;
+    // Bind call managers and stream manager to the WebSocket client
+    const wsClient = realtime.client;
     if (wsClient) {
       this.callManager.bindWebSocket(wsClient);
+      this.groupCallManager.bindWebSocket(wsClient);
       this.streamManager.bindWebSocket(wsClient);
     }
+
+    // disconnectRealtime a effacé les relais d'AutoCallManager.
+    this._autoCallManager?.attach();
   }
 
   /**
@@ -312,6 +373,7 @@ export class ApiCentral {
    */
   disconnectRealtime(): void {
     this.callManager.destroy();
+    this.groupCallManager.destroy();
     this.streamManager.destroy();
     this.realtime?.disconnect();
     this.realtime = null;
@@ -327,6 +389,18 @@ export class ApiCentral {
    */
   setApplicationId(applicationId: string): void {
     this.client.setHeader('X-Application-Id', applicationId);
+  }
+
+  /**
+   * Transmet aux gestionnaires d'appels l'utilisateur représenté par un jeton
+   * utilisateur (claim `user_id`) ; sans effet pour un jeton d'application.
+   */
+  private adoptUserIdFromToken(token: string): void {
+    const userId = readUserIdFromToken(token);
+    if (userId) {
+      this.callManager.setLocalUserId(userId);
+      this.groupCallManager.setLocalUserId(userId);
+    }
   }
 }
 
@@ -349,16 +423,48 @@ export {
   EncryptionModule,
   RealtimeModule,
   CallManager,
+  GroupCallManager,
+  AutoCallManager,
   StreamManager,
 } from './modules';
+
+// Politique de mode des appels (P2P ou LiveKit)
+export { GROUP_CALL_MIN_PARTICIPANTS, chooseCallMode } from './modules/auto-call-manager';
+export type { CallMode } from './modules/auto-call-manager';
 
 // Re-export WebSocket client for advanced usage
 export { WebSocketClient } from './utils/ws-client';
 export type { WebSocketClientConfig, ConnectionState, WsEventHandler } from './utils/ws-client';
 
 // Re-export realtime types
-export type { RealtimeConfig, MessageEvent, TypingEvent, PresenceEvent, NotificationEvent } from './modules/realtime';
+export type {
+  RealtimeConfig,
+  MessageEvent,
+  TypingEvent,
+  PresenceEvent,
+  PresenceStatusEvent,
+  PresenceStatusItem,
+  NotificationEvent,
+} from './modules/realtime';
 export type { CallManagerConfig, CallManagerState, StartCallParams } from './modules/call-manager';
+export type { GroupCallManagerConfig } from './modules/group-call-manager';
+export type {
+  GroupCallRoom,
+  GroupCallRoomEvents,
+  GroupCallRoomFactory,
+  GroupCallRoomParticipant,
+} from './modules/livekit-room';
+export type {
+  CallConnectedEvent,
+  CallEndedEvent,
+  CallErrorEvent,
+  CallParticipantEvent,
+  IncomingCallEvent,
+  MuteChangedEvent,
+  RemoteStreamEvent,
+  ScreenShareChangedEvent,
+  VideoChangedEvent,
+} from './modules/call-shared';
 
 // Default export
 export default ApiCentral;

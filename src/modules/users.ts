@@ -151,6 +151,10 @@ export class UsersModule {
   /**
    * Update user presence status
    *
+   * L'API met à jour la date de dernière activité et renvoie le statut
+   * envoyé, sans le conserver : `getPresence` et le temps réel dérivent le
+   * statut des connexions WebSocket de l'utilisateur.
+   *
    * @example
    * ```ts
    * const presence = await sdk.users.updatePresence('user-uuid', {
@@ -165,10 +169,13 @@ export class UsersModule {
   /**
    * Get user presence status
    *
+   * `online` tant que l'utilisateur a une connexion temps réel ouverte,
+   * `offline` sinon.
+   *
    * @example
    * ```ts
    * const presence = await sdk.users.getPresence('user-uuid');
-   * console.log(presence.status); // 'online' | 'away' | 'busy' | 'offline'
+   * console.log(presence.status); // 'online' | 'offline'
    * ```
    */
   async getPresence(userId: string): Promise<PresenceResponse> {
