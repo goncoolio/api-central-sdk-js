@@ -194,6 +194,15 @@ export interface ParticipantInfo {
   lastReadAt?: string;
 }
 
+/**
+ * Which new messages trigger a push for a participant who is offline.
+ *
+ * - `all`      — every message (the API default)
+ * - `mentions` — only messages that mention them
+ * - `none`     — never; the application sends its own notifications
+ */
+export type NotificationPreference = 'all' | 'mentions' | 'none';
+
 export interface ConversationParticipant {
   id: string;
   conversationId: string;
@@ -201,6 +210,8 @@ export interface ConversationParticipant {
   role: ParticipantRole;
   isMuted: boolean;
   mutedUntil?: string;
+  /** Optional in the type only so that existing fixtures keep compiling. */
+  notificationPreference?: NotificationPreference;
   joinedAt: string;
   lastReadAt?: string;
 }
@@ -284,6 +295,12 @@ export interface TypingRequest {
 export interface MarkReadRequest {
   userId: string;
   messageId?: string;
+}
+
+/** Only the fields provided are changed. */
+export interface UpdateParticipantSettingsRequest {
+  isMuted?: boolean;
+  notificationPreference?: NotificationPreference;
 }
 
 // -----------------------------------------------------------------------------
