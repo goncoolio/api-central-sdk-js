@@ -48,6 +48,11 @@ Alignement sur l'API Central S2S et sur la pile média déployée en production
 - **Réponses des bascules média typées** : `calls.setMuted` renvoie
   `{ muted }`, `setVideoEnabled` `{ videoEnabled }`, `setScreenSharing`
   `{ screenSharing }` (au lieu de `{ success }`).
+- **`encryption.rotateSignedPrekey()`** prend un `RotateSignedPrekeyRequest`
+  (`signedPrekeyId`, `signedPrekey`, `signedPrekeySignature`) au lieu d'une
+  forme imbriquée avec `userId`, que l'API ne pouvait pas désérialiser : la
+  rotation de la clé signée échouait donc toujours. L'utilisateur vient du
+  jeton, comme pour `uploadPrekeys`.
 
 ### Nouveautés
 
@@ -78,6 +83,12 @@ Alignement sur l'API Central S2S et sur la pile média déployée en production
   l'adaptateur `GroupCallRoom`.
 
 ### Corrections
+
+- Les exemples de `encryption.registerKeys` et `encryption.uploadPrekeys`
+  montraient une forme imbriquée avec `userId` (`signedPrekey: { keyId,
+  publicKey, signature }`, `prekeys: [{ keyId, publicKey }]`) que l'API refuse.
+  Leurs types étaient déjà justes : seuls les exemples, et un test qui encodait
+  cette forme, ont changé.
 
 - `calls.sendOffer` et `sendAnswer` envoient `sdp_type`, champ exigé par
   l'API : ils échouaient systématiquement.

@@ -115,3 +115,21 @@ realtime.onPresenceStatus((event) => event.map((item) => item.userId));
 expectType<PresenceStatus>('away');
 // @ts-expect-error 'busy' n'est ni documenté ni produit par l'API
 expectType<PresenceStatus>('busy');
+
+// -----------------------------------------------------------------------------
+// Chiffrement : rotation de la clé signée (RotateSignedPrekeyRequest,
+// src/types/encryption.rs). L'API prend l'utilisateur dans le jeton
+// (src/api/encryption.rs, rotate_signed_prekey)
+// -----------------------------------------------------------------------------
+
+type Encryption = ApiCentral['encryption'];
+declare const encryption: Encryption;
+
+void encryption.rotateSignedPrekey({
+  signedPrekeyId: 2,
+  signedPrekey: 'base64-nouvelle-cle',
+  signedPrekeySignature: 'base64-signature',
+});
+// prettier-ignore
+// @ts-expect-error l'ancienne forme, imbriquée et avec userId, que l'API refuse
+void encryption.rotateSignedPrekey({ userId: 'u', signedPrekey: { keyId: 2, publicKey: 'k', signature: 's' } });

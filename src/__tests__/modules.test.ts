@@ -634,16 +634,13 @@ describe('ApiCentral SDK', () => {
       mockResponse({ success: true });
 
       const result = await sdk.encryption.registerKeys({
-        userId: 'user-uuid',
         identityKey: 'base64-identity-key',
-        signedPrekey: {
-          keyId: 1,
-          publicKey: 'base64-signed-prekey',
-          signature: 'base64-signature',
-        },
+        signedPrekeyId: 1,
+        signedPrekey: 'base64-signed-prekey',
+        signedPrekeySignature: 'base64-signature',
         prekeys: [
-          { keyId: 1, publicKey: 'base64-prekey-1' },
-          { keyId: 2, publicKey: 'base64-prekey-2' },
+          { prekeyId: 1, prekey: 'base64-prekey-1' },
+          { prekeyId: 2, prekey: 'base64-prekey-2' },
         ],
       });
 
@@ -691,15 +688,24 @@ describe('ApiCentral SDK', () => {
       mockResponse({ success: true });
 
       const result = await sdk.encryption.rotateSignedPrekey({
-        userId: 'user-uuid',
-        signedPrekey: {
-          keyId: 2,
-          publicKey: 'base64-new-signed-prekey',
-          signature: 'base64-new-signature',
-        },
+        signedPrekeyId: 2,
+        signedPrekey: 'base64-new-signed-prekey',
+        signedPrekeySignature: 'base64-new-signature',
       });
 
       expect(result.success).toBe(true);
+      // L'API prend l'utilisateur dans le jeton : le corps ne porte que la clé.
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/s2s/v1/encryption/keys/rotate',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            signed_prekey_id: 2,
+            signed_prekey: 'base64-new-signed-prekey',
+            signed_prekey_signature: 'base64-new-signature',
+          }),
+        })
+      );
     });
   });
 
