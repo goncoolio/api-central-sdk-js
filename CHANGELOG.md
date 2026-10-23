@@ -1,5 +1,31 @@
 # Journal des modifications
 
+## 2.2.0
+
+### Nouveautés
+
+- **`MessageEvent.replyToId`** : les événements temps réel `message_new` et
+  `message_updated` portent l'identifiant du message auquel ils répondent
+  (`reply_to_id` côté API, absent quand le message ne répond à rien). Seul
+  l'identifiant est transmis ; l'aperçu se retrouve dans l'historique local ou
+  via le REST.
+- **`MessageEvent.clientMessageId`** : l'écho de la clé fournie à l'envoi,
+  que l'API transmettait déjà sans que le type l'expose ; il sert à rapprocher
+  l'événement du message optimiste de l'expéditeur.
+- **`MessageResponse.readBy`** : identifiants des utilisateurs qui ont lu le
+  message (`read_by`, toujours renvoyé par l'API), pour reconstruire les
+  accusés de lecture d'un groupe après une reconnexion. Optionnel dans le type
+  afin que les objets construits à la main continuent de compiler.
+
+### Corrections
+
+- **`MessageResponse.replyTo`** est typé `MessageResponse | null` : l'API
+  renvoie `null` quand le message ne répond à rien, et un aperçu d'un seul
+  niveau sinon (contenu et pièces jointes vidés si la cible a été supprimée).
+- `sendMessage` transmettait déjà `replyToId` (`reply_to_id`) ; des tests le
+  couvrent désormais. L'API répond 400 si la cible est absente, supprimée ou
+  d'une autre conversation.
+
 ## 2.1.0
 
 ### Nouveautés

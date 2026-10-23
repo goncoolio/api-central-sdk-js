@@ -65,3 +65,63 @@ describe('RealtimeModule — présence', () => {
     expect(handler).toHaveBeenCalledWith({ statuses: [] });
   });
 });
+
+describe('RealtimeModule — réponses à un message', () => {
+  let sdk: ApiCentral;
+  let socket: FakeBrowserWebSocket;
+
+  beforeEach(() => {
+    FakeBrowserWebSocket.reset();
+    vi.stubGlobal('WebSocket', FakeBrowserWebSocket);
+    sdk = new ApiCentral({ baseUrl: BASE_URL, wsUrl: 'wss://api.example.com/events' });
+    sdk.connectRealtime(USER_TOKEN);
+    socket = FakeBrowserWebSocket.last();
+    socket.open();
+  });
+
+  afterEach(() => {
+    sdk.disconnectRealtime();
+    vi.unstubAllGlobals();
+  });
+
+  const messageNew = {
+    type: 'message_new',
+    id: 'msg-2',
+    conversation_id: 'conv-1',
+    sender_id: 'user-2',
+    content: 'Oui',
+    content_type: 'text',
+    created_at: '2026-10-23T10:00:00Z',
+    client_message_id: 'local-42',
+  };
+
+  it('onMessageNew expose replyToId quand le message répond à un autre', () => {
+    const handler = vi.fn();
+    sdk.realtime!.onMessageNew(handler);
+
+    socket.receive({ ...messageNew, reply_to_id: 'msg-1' });
+
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'msg-2', replyToId: 'msg-1', clientMessageId: 'local-42' })
+    );
+  });
+
+  it('onMessageNew n’a pas de replyToId quand l’API omet le champ', () => {
+    const handler = vi.fn();
+    sdk.realtime!.onMessageNew(handler);
+
+    socket.receive(messageNew);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0]![0]).not.toHaveProperty('replyToId');
+  });
+
+  it('onMessageUpdated expose replyToId', () => {
+    const handler = vi.fn();
+    sdk.realtime!.onMessageUpdated(handler);
+
+    socket.receive({ ...messageNew, type: 'message_updated', content: 'Oui !', reply_to_id: 'msg-1' });
+
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ content: 'Oui !', replyToId: 'msg-1' }));
+  });
+});
