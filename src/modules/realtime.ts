@@ -21,6 +21,14 @@ export interface MessageEvent {
   content: string;
   contentType: string;
   createdAt: string;
+  /** Echo of the sender's `clientMessageId`, to reconcile an optimistic message */
+  clientMessageId?: string;
+  /**
+   * Id of the message this one answers, absent when it answers nothing. Only
+   * the id is sent: resolve the preview from local history, or through REST
+   * (`MessageResponse.replyTo`).
+   */
+  replyToId?: string;
   participants?: string[];
 }
 

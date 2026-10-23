@@ -8,6 +8,8 @@
 
 import type {
   ApiCentral,
+  MessageEvent,
+  MessageResponse,
   PresenceStatus,
   PresenceStatusItem,
   ReactionCount,
@@ -133,3 +135,25 @@ void encryption.rotateSignedPrekey({
 // prettier-ignore
 // @ts-expect-error l'ancienne forme, imbriquée et avec userId, que l'API refuse
 void encryption.rotateSignedPrekey({ userId: 'u', signedPrekey: { keyId: 2, publicKey: 'k', signature: 's' } });
+
+// -----------------------------------------------------------------------------
+// Réponses : message_new / message_updated portent reply_to_id
+// (MessageEventPayload, src/ws/events.rs) ; le REST porte reply_to, aperçu
+// d'un niveau ou null (MessageResponse, src/types/dto.rs)
+// -----------------------------------------------------------------------------
+
+realtime.onMessageNew((event: MessageEvent) => {
+  expectType<string | undefined>(event.replyToId);
+  expectType<string | undefined>(event.clientMessageId);
+});
+realtime.onMessageUpdated((event) => expectType<string | undefined>(event.replyToId));
+
+declare const restMessage: MessageResponse;
+expectType<MessageResponse | null | undefined>(restMessage.replyTo);
+expectType<string | undefined>(restMessage.replyTo?.id);
+// L'API sérialise reply_to à null quand le message ne répond à rien
+expectType<MessageResponse['replyTo']>(null);
+
+type Messaging = ApiCentral['messaging'];
+declare const messaging: Messaging;
+void messaging.sendMessage('conv', { senderId: 'u', content: 'Oui', replyToId: 'msg-1' });

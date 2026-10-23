@@ -219,6 +219,62 @@ describe('ApiCentral SDK', () => {
       );
     });
 
+    it('should send a reply with reply_to_id and read the nested reply_to', async () => {
+      mockResponse({
+        id: 'msg-2',
+        conversation_id: 'conv-uuid',
+        content: 'Oui',
+        content_type: 'text',
+        reply_to: {
+          id: 'msg-1',
+          conversation_id: 'conv-uuid',
+          content: 'On se voit demain ?',
+          content_type: 'text',
+          reply_to: null,
+          reactions: [],
+          is_edited: false,
+          is_deleted: false,
+          read_by: [],
+          created_at: '2026-10-23T09:00:00Z',
+        },
+        reactions: [],
+        is_edited: false,
+        is_deleted: false,
+        read_by: [],
+        created_at: '2026-10-23T10:00:00Z',
+      });
+
+      const result = await sdk.messaging.sendMessage('conv-uuid', {
+        senderId: 'user-uuid',
+        content: 'Oui',
+        replyToId: 'msg-1',
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0]![1].body);
+      expect(body).toMatchObject({ sender_id: 'user-uuid', content: 'Oui', reply_to_id: 'msg-1' });
+      expect(result.replyTo).toMatchObject({ id: 'msg-1', content: 'On se voit demain ?', replyTo: null });
+    });
+
+    it('should keep reply_to null when the message answers nothing', async () => {
+      mockResponse({
+        id: 'msg-3',
+        conversation_id: 'conv-uuid',
+        content: 'Salut',
+        content_type: 'text',
+        reply_to: null,
+        reactions: [],
+        is_edited: false,
+        is_deleted: false,
+        read_by: [],
+        created_at: '2026-10-23T10:00:00Z',
+      });
+
+      const result = await sdk.messaging.sendMessage('conv-uuid', { senderId: 'user-uuid', content: 'Salut' });
+
+      expect(result.replyTo).toBeNull();
+      expect(JSON.parse(mockFetch.mock.calls[0]![1].body)).not.toHaveProperty('reply_to_id');
+    });
+
     it('should send an audio message', async () => {
       const message = {
         id: 'msg-uuid',

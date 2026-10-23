@@ -269,7 +269,11 @@ export interface MessageResponse {
   content: string;
   contentType: ContentType;
   attachments?: Attachment[];
-  replyTo?: MessageResponse;
+  /**
+   * One-level preview of the message this one answers, `null` when it answers
+   * nothing. Content and attachments are empty when the target was deleted.
+   */
+  replyTo?: MessageResponse | null;
   reactions: ReactionResponse[];
   isEdited: boolean;
   editedAt?: string;

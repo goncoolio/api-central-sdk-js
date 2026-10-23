@@ -159,6 +159,16 @@ const audioMessage = await sdk.messaging.sendMessage('conv-uuid', {
   }],
 });
 
+// Réponse à un message : l'API refuse (400) une cible absente, supprimée ou
+// d'une autre conversation. La réponse REST porte l'aperçu dans replyTo
+// (un seul niveau, null quand le message ne répond à rien).
+const reply = await sdk.messaging.sendMessage('conv-uuid', {
+  senderId: 'user-uuid',
+  content: 'Oui, à demain',
+  replyToId: 'message-uuid',
+});
+console.log(reply.replyTo?.content);
+
 // Pagination par curseur
 const { data, nextCursor, hasMore } = await sdk.messaging.listMessages('conv-uuid', { limit: 50 });
 
@@ -385,6 +395,9 @@ const realtime = sdk.realtime!;
 realtime.joinConversation('conv-uuid');
 
 realtime.onMessageNew((msg) => console.log(msg.content));
+// message_new et message_updated ne portent que l'identifiant du message cité :
+// retrouver l'aperçu dans l'historique local, ou via le REST (replyTo).
+realtime.onMessageNew(({ replyToId, clientMessageId }) => { /* … */ });
 realtime.onTypingUpdate(({ conversationId, userIds }) => { /* … */ });
 realtime.onPresenceUpdate(({ userId, status }) => { /* … */ });
 
