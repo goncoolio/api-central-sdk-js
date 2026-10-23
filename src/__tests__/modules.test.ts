@@ -253,6 +253,7 @@ describe('ApiCentral SDK', () => {
       const body = JSON.parse(mockFetch.mock.calls[0]![1].body);
       expect(body).toMatchObject({ sender_id: 'user-uuid', content: 'Oui', reply_to_id: 'msg-1' });
       expect(result.replyTo).toMatchObject({ id: 'msg-1', content: 'On se voit demain ?', replyTo: null });
+      expect(result.readBy).toEqual([]);
     });
 
     it('should keep reply_to null when the message answers nothing', async () => {
@@ -265,11 +266,12 @@ describe('ApiCentral SDK', () => {
         reactions: [],
         is_edited: false,
         is_deleted: false,
-        read_by: [],
+        read_by: ['user-2', 'user-3'],
         created_at: '2026-10-23T10:00:00Z',
       });
 
       const result = await sdk.messaging.sendMessage('conv-uuid', { senderId: 'user-uuid', content: 'Salut' });
+      expect(result.readBy).toEqual(['user-2', 'user-3']);
 
       expect(result.replyTo).toBeNull();
       expect(JSON.parse(mockFetch.mock.calls[0]![1].body)).not.toHaveProperty('reply_to_id');

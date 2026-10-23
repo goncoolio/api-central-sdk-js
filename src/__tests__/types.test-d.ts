@@ -151,6 +151,8 @@ realtime.onMessageUpdated((event) => expectType<string | undefined>(event.replyT
 declare const restMessage: MessageResponse;
 expectType<MessageResponse | null | undefined>(restMessage.replyTo);
 expectType<string | undefined>(restMessage.replyTo?.id);
+// read_by liste les utilisateurs qui ont lu le message (accusés de groupe)
+expectType<string[] | undefined>(restMessage.readBy);
 // L'API sérialise reply_to à null quand le message ne répond à rien
 expectType<MessageResponse['replyTo']>(null);
 

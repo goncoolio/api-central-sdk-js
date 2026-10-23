@@ -278,6 +278,12 @@ export interface MessageResponse {
   isEdited: boolean;
   editedAt?: string;
   isDeleted: boolean;
+  /**
+   * Ids of the users who have read this message, to rebuild group read
+   * receipts after a reconnection. Always sent by the API; optional in the
+   * type so that existing hand-built objects keep compiling.
+   */
+  readBy?: string[];
   createdAt: string;
 }
 

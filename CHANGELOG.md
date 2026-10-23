@@ -1,6 +1,6 @@
 # Journal des modifications
 
-## Non publié
+## 2.2.0
 
 ### Nouveautés
 
@@ -12,6 +12,10 @@
 - **`MessageEvent.clientMessageId`** : l'écho de la clé fournie à l'envoi,
   que l'API transmettait déjà sans que le type l'expose ; il sert à rapprocher
   l'événement du message optimiste de l'expéditeur.
+- **`MessageResponse.readBy`** : identifiants des utilisateurs qui ont lu le
+  message (`read_by`, toujours renvoyé par l'API), pour reconstruire les
+  accusés de lecture d'un groupe après une reconnexion. Optionnel dans le type
+  afin que les objets construits à la main continuent de compiler.
 
 ### Corrections
 
