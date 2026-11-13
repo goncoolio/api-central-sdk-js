@@ -9,6 +9,7 @@ import type {
   MessageResponse,
   SendMessageRequest,
   EditMessageRequest,
+  DeleteMessageOptions,
   AddReactionRequest,
   TypingRequest,
   MarkReadRequest,
@@ -276,10 +277,21 @@ export class MessagingModule {
    * @example
    * ```ts
    * await sdk.messaging.deleteMessage('message-uuid');
+   *
+   * // Au nom de son auteur (ou d'un administrateur de la conversation)
+   * await sdk.messaging.deleteMessage('message-uuid', { userId: 'user-uuid' });
+   *
+   * // Modération décidée par l'application (jeton d'application seulement)
+   * await sdk.messaging.deleteMessage('message-uuid', { userId: 'staff-uuid', moderation: true });
    * ```
    */
-  async deleteMessage(messageId: string): Promise<{ success: boolean }> {
-    return this.client.delete<{ success: boolean }>(`/messaging/messages/${messageId}`);
+  async deleteMessage(
+    messageId: string,
+    options: DeleteMessageOptions = {}
+  ): Promise<{ success: boolean }> {
+    return this.client.delete<{ success: boolean }>(`/messaging/messages/${messageId}`, {
+      params: { userId: options.userId, moderation: options.moderation ? true : undefined },
+    });
   }
 
   // ---------------------------------------------------------------------------

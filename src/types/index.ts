@@ -241,6 +241,25 @@ export interface SendMessageRequest {
 
 export interface EditMessageRequest {
   content: string;
+  /**
+   * L'auteur qui modifie. Facultatif : sans lui, un jeton d'application modifie
+   * en son propre nom. Nommé, l'API vérifie que c'est bien l'auteur du message.
+   */
+  senderId?: string;
+}
+
+export interface DeleteMessageOptions {
+  /**
+   * L'utilisateur qui supprime. Facultatif : sans lui, un jeton d'application
+   * supprime en son propre nom. Nommé, il doit être l'auteur du message ou un
+   * administrateur de la conversation.
+   */
+  userId?: string;
+  /**
+   * Jeton d'application seulement : l'application déclare que ses propres
+   * règles de modération autorisent `userId` à supprimer ce message.
+   */
+  moderation?: boolean;
 }
 
 export interface Message {
@@ -540,6 +559,14 @@ export type SenderType = 'admin' | 'user' | 'system';
 export interface CreateTicketReplyRequest {
   senderId: string;
   content: string;
+  /**
+   * À quel titre l'expéditeur répond. `'agent'` (jeton d'application
+   * seulement) : il répond pour le support, sans être le demandeur ni l'agent
+   * assigné. `'user'` : il doit être le demandeur. Absent : l'API le déduit —
+   * demandeur, agent assigné, ou support sous jeton d'application.
+   * Une réponse du support revient avec `senderType: 'admin'`.
+   */
+  senderType?: 'user' | 'agent';
 }
 
 export interface TicketReplyResponse {

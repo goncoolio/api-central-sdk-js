@@ -122,8 +122,19 @@ export class NotificationsModule {
    * });
    * ```
    */
-  async markAsRead(request: { notificationIds: string[] }): Promise<MarkReadResult> {
-    return this.client.post<MarkReadResult>('/notifications/mark-read', request);
+  async markAsRead(request: {
+    notificationIds: string[];
+    /**
+     * L'utilisateur à qui ces notifications appartiennent. Nommé, seules les
+     * siennes sont marquées lues ; sans lui, un jeton d'application agit sur
+     * toute l'application.
+     */
+    userId?: string;
+  }): Promise<MarkReadResult> {
+    const { userId, ...body } = request;
+    return this.client.post<MarkReadResult>('/notifications/mark-read', body, {
+      params: { userId },
+    });
   }
 
   /**
@@ -162,7 +173,13 @@ export class NotificationsModule {
    * await sdk.notifications.delete('notification-uuid');
    * ```
    */
-  async delete(notificationId: string): Promise<{ success: boolean }> {
-    return this.client.delete<{ success: boolean }>(`/notifications/${notificationId}`);
+  async delete(
+    notificationId: string,
+    options: { userId?: string } = {}
+  ): Promise<{ success: boolean }> {
+    // `userId` nommé : la notification doit lui appartenir (404 sinon).
+    return this.client.delete<{ success: boolean }>(`/notifications/${notificationId}`, {
+      params: { userId: options.userId },
+    });
   }
 }

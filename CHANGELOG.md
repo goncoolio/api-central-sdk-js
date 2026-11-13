@@ -1,5 +1,35 @@
 # Journal des modifications
 
+## 2.2.0
+
+L'API Central vérifie désormais l'utilisateur qu'un jeton d'application nomme
+comme acteur (auteur d'un message, propriétaire d'une notification, partie à un
+ticket). Ces champs, tous facultatifs, permettent de le nommer. Sans eux, les
+appels se comportent comme en 2.1.0.
+
+### Nouveautés
+
+- **`messaging.editMessage(id, { content, senderId })`** : `senderId` nomme
+  l'auteur ; l'API refuse (403) s'il n'est pas l'auteur du message.
+- **`messaging.deleteMessage(id, { userId, moderation })`** : `userId` doit être
+  l'auteur ou un administrateur de la conversation ; `moderation: true` (jeton
+  d'application seulement) déclare une suppression décidée par la modération de
+  l'application. Type **`DeleteMessageOptions`**.
+- **`notifications.markAsRead({ notificationIds, userId })`** et
+  **`notifications.delete(id, { userId })`** : bornés aux notifications de
+  `userId`.
+- **`support.createReply(id, { senderId, content, senderType })`** :
+  `senderType: 'agent'` (jeton d'application seulement) quand l'expéditeur répond
+  pour le support ; `'user'` exige le demandeur.
+
+### À savoir
+
+- Une réponse du support revient avec `senderType: 'admin'`, y compris quand
+  `senderType` n'est pas envoyé et que l'expéditeur n'est ni le demandeur ni
+  l'agent assigné (elle revenait `'user'`).
+- Réagir ou modifier un message supprimé répond 409 ; un utilisateur nommé qui
+  ne participe pas à la conversation reçoit 403.
+
 ## 2.1.0
 
 ### Nouveautés

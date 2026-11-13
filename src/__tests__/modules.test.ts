@@ -409,6 +409,57 @@ describe('ApiCentral SDK', () => {
       );
     });
 
+    it('should scope mark-as-read and delete to a named user', async () => {
+      mockResponse({ success: true, updated_count: 1 });
+      await sdk.notifications.markAsRead({ notificationIds: ['notif-1'], userId: 'user-uuid' });
+
+      const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('https://api.example.com/s2s/v1/notifications/mark-read?user_id=user-uuid');
+      expect(JSON.parse(init.body as string)).toEqual({ notification_ids: ['notif-1'] });
+
+      mockResponse({ success: true });
+      await sdk.notifications.delete('notif-1', { userId: 'user-uuid' });
+      expect(mockFetch.mock.calls[1][0]).toBe(
+        'https://api.example.com/s2s/v1/notifications/notif-1?user_id=user-uuid'
+      );
+
+      mockResponse({ success: true });
+      await sdk.notifications.delete('notif-1');
+      expect(mockFetch.mock.calls[2][0]).toBe('https://api.example.com/s2s/v1/notifications/notif-1');
+    });
+
+    it('should name the actor of a message edit, delete and ticket reply', async () => {
+      mockResponse({ id: 'm1' });
+      await sdk.messaging.editMessage('m1', { content: 'x', senderId: 'author-uuid' });
+      expect(JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string)).toEqual({
+        content: 'x',
+        sender_id: 'author-uuid',
+      });
+
+      mockResponse({ success: true });
+      await sdk.messaging.deleteMessage('m1');
+      expect(mockFetch.mock.calls[1][0]).toBe('https://api.example.com/s2s/v1/messaging/messages/m1');
+
+      mockResponse({ success: true });
+      await sdk.messaging.deleteMessage('m1', { userId: 'staff-uuid', moderation: true });
+      expect(mockFetch.mock.calls[2][0]).toBe(
+        'https://api.example.com/s2s/v1/messaging/messages/m1?user_id=staff-uuid&moderation=true'
+      );
+
+      mockResponse({ id: 'r1', sender_type: 'admin' });
+      const reply = await sdk.support.createReply('t1', {
+        senderId: 'staff-uuid',
+        content: 'ok',
+        senderType: 'agent',
+      });
+      expect(JSON.parse((mockFetch.mock.calls[3][1] as RequestInit).body as string)).toEqual({
+        sender_id: 'staff-uuid',
+        content: 'ok',
+        sender_type: 'agent',
+      });
+      expect(reply.senderType).toBe('admin');
+    });
+
     it('should mark all notifications as read', async () => {
       mockResponse({ success: true, updated_count: 7 });
 
