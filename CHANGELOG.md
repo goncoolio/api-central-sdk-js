@@ -1,5 +1,26 @@
 # Journal des modifications
 
+## 2.3.0
+
+Avec un jeton d'application, l'API exige de nommer l'acteur à la création d'une
+conversation et à l'ajout d'un participant. Le SDK n'avait aucun champ pour cela :
+les appelants devaient forcer le type.
+
+### Nouveautés
+
+- **`messaging.createConversation({ …, createdById })`** : le créateur, qui devient
+  administrateur de la conversation.
+- **`messaging.addParticipant(id, { userId, role, actorId })`** : l'administrateur
+  qui ajoute le participant.
+- **`title`** dans `createConversation` et `updateConversation` : c'est le champ que
+  l'API lit.
+
+### Corrigé
+
+- `name` était envoyé tel quel et ignoré par l'API : le titre ne s'enregistrait pas.
+  `name` est désormais envoyé comme `title` quand `title` est absent ; il reste
+  accepté mais déprécié. `description`, que l'API ne stocke pas, n'est plus envoyé.
+
 ## 2.2.0
 
 L'API Central vérifie désormais l'utilisateur qu'un jeton d'application nomme

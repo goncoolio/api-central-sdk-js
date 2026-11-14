@@ -157,14 +157,29 @@ export type ParticipantRole = 'owner' | 'admin' | 'member';
 export interface CreateConversationRequest {
   conversationType: ConversationType;
   participantIds: string[];
+  /** Conversation title (groups and channels). */
+  title?: string;
+  /**
+   * @deprecated The API reads `title`; `name` is sent as `title` when `title` is
+   * absent.
+   */
   name?: string;
+  /** @deprecated Not stored by the API. */
   description?: string;
   avatarUrl?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * Creator of the conversation. Required with an application token: the API
+   * makes this user the conversation admin. A user token is its own creator.
+   */
+  createdById?: string;
 }
 
 export interface UpdateConversationRequest {
+  title?: string;
+  /** @deprecated Sent as `title` when `title` is absent. */
   name?: string;
+  /** @deprecated Not stored by the API. */
   description?: string;
   avatarUrl?: string;
   metadata?: Record<string, unknown>;
@@ -219,6 +234,11 @@ export interface ConversationParticipant {
 export interface AddParticipantRequest {
   userId: string;
   role?: ParticipantRole;
+  /**
+   * Admin of the conversation adding the participant. Required with an application
+   * token; a user token is read as the actor.
+   */
+  actorId?: string;
 }
 
 export interface Attachment {
