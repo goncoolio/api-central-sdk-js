@@ -45,13 +45,14 @@ export class MessagingModule {
    * // Group conversation
    * const group = await sdk.messaging.createConversation({
    *   conversationType: 'group',
-   *   participantIds: ['user-1', 'user-2', 'user-3'],
-   *   name: 'Project Team'
+   *   participantIds: ['admin-uuid', 'user-2', 'user-3'],
+   *   title: 'Project Team',
+   *   createdById: 'admin-uuid' // required with an application token
    * });
    * ```
    */
   async createConversation(request: CreateConversationRequest): Promise<ConversationResponse> {
-    return this.client.post<ConversationResponse>('/messaging/conversations', request);
+    return this.client.post<ConversationResponse>('/messaging/conversations', withTitle(request));
   }
 
   /**
@@ -114,7 +115,10 @@ export class MessagingModule {
     conversationId: string,
     request: UpdateConversationRequest
   ): Promise<Conversation> {
-    return this.client.put<Conversation>(`/messaging/conversations/${conversationId}`, request);
+    return this.client.put<Conversation>(
+      `/messaging/conversations/${conversationId}`,
+      withTitle(request)
+    );
   }
 
   /**
@@ -140,7 +144,8 @@ export class MessagingModule {
    * ```ts
    * const participant = await sdk.messaging.addParticipant('conv-uuid', {
    *   userId: 'user-uuid',
-   *   role: 'member'
+   *   role: 'member',
+   *   actorId: 'admin-uuid' // required with an application token
    * });
    * ```
    */
@@ -400,4 +405,12 @@ export class MessagingModule {
       request
     );
   }
+}
+
+/** The API reads `title`; older callers pass `name`, and `description` is not stored. */
+function withTitle<T extends { title?: string; name?: string; description?: string }>(
+  request: T
+): Omit<T, 'name' | 'description'> {
+  const { name, description: _description, ...rest } = request;
+  return rest.title === undefined && name !== undefined ? { ...rest, title: name } : rest;
 }

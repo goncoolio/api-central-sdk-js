@@ -197,6 +197,51 @@ describe('ApiCentral SDK', () => {
       );
     });
 
+    it('should name the creator and the title of a conversation, and the actor adding a participant', async () => {
+      mockResponse({ id: 'conv-uuid', participants: [] });
+      await sdk.messaging.createConversation({
+        conversationType: 'group',
+        participantIds: ['admin-uuid', 'user-1'],
+        title: 'Intervention',
+        createdById: 'admin-uuid',
+      });
+      expect(JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string)).toEqual({
+        conversation_type: 'group',
+        participant_ids: ['admin-uuid', 'user-1'],
+        title: 'Intervention',
+        created_by_id: 'admin-uuid',
+      });
+
+      mockResponse({ id: 'conv-uuid', participants: [] });
+      await sdk.messaging.createConversation({
+        conversationType: 'group',
+        participantIds: ['user-1'],
+        name: 'Legacy name',
+        description: 'not stored',
+      });
+      expect(JSON.parse((mockFetch.mock.calls[1][1] as RequestInit).body as string)).toEqual({
+        conversation_type: 'group',
+        participant_ids: ['user-1'],
+        title: 'Legacy name',
+      });
+
+      mockResponse({ id: 'conv-uuid' });
+      await sdk.messaging.updateConversation('conv-uuid', { name: 'Renamed', title: 'Kept' });
+      expect(JSON.parse((mockFetch.mock.calls[2][1] as RequestInit).body as string)).toEqual({
+        title: 'Kept',
+      });
+
+      mockResponse({ id: 'p1', userId: 'user-2' });
+      await sdk.messaging.addParticipant('conv-uuid', { userId: 'user-2', actorId: 'admin-uuid' });
+      expect(mockFetch.mock.calls[3][0]).toBe(
+        'https://api.example.com/s2s/v1/messaging/conversations/conv-uuid/participants'
+      );
+      expect(JSON.parse((mockFetch.mock.calls[3][1] as RequestInit).body as string)).toEqual({
+        user_id: 'user-2',
+        actor_id: 'admin-uuid',
+      });
+    });
+
     it('should send a text message', async () => {
       const message = {
         id: 'msg-uuid',
